@@ -30,10 +30,16 @@ class ScramjetEngine: PropulsionSystem {
             machEfficiency = max(0.5, 1.0 - (mach - 10.0) / 5.0)
         }
 
-        // Still air-breathing, but operates at extreme altitude
+        // Air-breathing: MORE air at lower altitude = MORE thrust
+        // Creates critical tradeoff: lower = more thrust but EXTREME heating at hypersonic speeds
+        // Scramjets are very sensitive to air density
         let densityFactor = exp(-altitude / 50000.0)
 
-        return baseThrust * activationFactor * machEfficiency * densityFactor
+        // Enhanced air density benefit for scramjets
+        // Must balance thrust gain against thermal limits at Mach 10+
+        let airMassFactor = 0.2 + 2.0 * densityFactor
+
+        return baseThrust * activationFactor * machEfficiency * airMassFactor
     }
 
     func getFuelConsumption(altitude: Double, speed: Double) -> Double {

@@ -30,10 +30,16 @@ class RamjetEngine: PropulsionSystem {
             machEfficiency = max(0.4, 1.0 - (mach - 4.5) / 1.5)
         }
 
-        // Still air-breathing, but operates at higher altitude
+        // Air-breathing: MORE air at lower altitude = MORE thrust
+        // This creates tradeoff: lower altitude = more thrust but more heating
+        // Thrust scales nearly linearly with air density for ramjets
         let densityFactor = exp(-altitude / 35000.0)
 
-        return baseThrust * ramFactor * machEfficiency * densityFactor
+        // Enhanced air density benefit for ramjets
+        // At sea level: ~2.5x thrust vs 50,000 ft
+        let airMassFactor = 0.3 + 1.7 * densityFactor
+
+        return baseThrust * ramFactor * machEfficiency * airMassFactor
     }
 
     func getFuelConsumption(altitude: Double, speed: Double) -> Double {

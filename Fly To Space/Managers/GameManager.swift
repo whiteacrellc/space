@@ -12,6 +12,7 @@ class GameManager {
 
     private(set) var currentFlightPlan: FlightPlan?
     private(set) var lastMissionResult: MissionResult?
+    private(set) var currentPlaneDesign: PlaneDesign = PlaneDesign.defaultDesign
     private let propulsionManager = PropulsionManager()
     private var simulator: FlightSimulator?
 
@@ -34,11 +35,26 @@ class GameManager {
         return currentFlightPlan!
     }
 
+    /// Update the current plane design
+    func setPlaneDesign(_ design: PlaneDesign) {
+        currentPlaneDesign = design
+        print("Plane design updated: \(design.summary())")
+        print("Design score: \(design.score())/100")
+    }
+
+    /// Get the current plane design
+    func getPlaneDesign() -> PlaneDesign {
+        return currentPlaneDesign
+    }
+
     /// Simulate the entire flight based on the current flight plan
     func simulateFlight(plan: FlightPlan) -> MissionResult {
-        // Reset simulator
-        simulator = FlightSimulator(initialFuel: 50000.0)
+        // Reset simulator with current plane design
+        simulator = FlightSimulator(initialFuel: 50000.0, planeDesign: currentPlaneDesign)
         propulsionManager.enableAutoMode()
+
+        print("Using plane design: Pitch \(currentPlaneDesign.pitchAngle)°, Yaw \(currentPlaneDesign.yawAngle)°, Pos \(currentPlaneDesign.position)")
+        print("  \(currentPlaneDesign.summary())")
 
         var segments: [FlightSegmentResult] = []
         var totalFuel = 0.0

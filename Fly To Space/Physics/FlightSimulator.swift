@@ -13,8 +13,8 @@ class FlightSimulator {
     private var velocity: Double // m/s
     private var fuelMass: Double // kg
     private let dryMass: Double
-    private let dragCoefficient: Double
-    private let referenceArea: Double
+    private let dragCalculator: DragCalculator
+    private let planeDesign: PlaneDesign
 
     // Simulation parameters
     private let timeStep: Double
@@ -25,6 +25,7 @@ class FlightSimulator {
         dryMass: Double = PhysicsConstants.dryMass,
         dragCoefficient: Double = PhysicsConstants.dragCoefficient,
         referenceArea: Double = PhysicsConstants.referenceArea,
+        planeDesign: PlaneDesign = PlaneDesign.defaultDesign,
         timeStep: Double = 0.1,
         maxSimulationTime: Double = 1000.0
     ) {
@@ -32,8 +33,12 @@ class FlightSimulator {
         self.velocity = 0
         self.fuelMass = initialFuel * PhysicsConstants.kgPerLiter
         self.dryMass = dryMass
-        self.dragCoefficient = dragCoefficient
-        self.referenceArea = referenceArea
+        self.planeDesign = planeDesign
+        self.dragCalculator = DragCalculator(
+            referenceArea: referenceArea,
+            baselineDragCoefficient: dragCoefficient,
+            planeDesign: planeDesign
+        )
         self.timeStep = timeStep
         self.maxSimulationTime = maxSimulationTime
     }
@@ -64,12 +69,14 @@ class FlightSimulator {
 
         // Initial trajectory point
         let initialFuelRemaining = fuelMass / PhysicsConstants.kgPerLiter
+        let initialTemp = ThermalModel.calculateLeadingEdgeTemperature(altitude: h, velocity: v, planeDesign: planeDesign)
         trajectory.append(TrajectoryPoint(
             time: 0,
             altitude: start.altitude,
             speed: start.speed,
             fuelRemaining: initialFuelRemaining,
-            engineMode: propulsionManager.currentMode
+            engineMode: propulsionManager.currentMode,
+            temperature: initialTemp
         ))
 
         // Simulation loop
@@ -81,7 +88,7 @@ class FlightSimulator {
 
             // Calculate forces
             let thrust = propulsionManager.getThrust(altitude: altitudeFeet, speed: speedMach)
-            let drag = calculateDrag(altitude: h, velocity: v)
+            let drag = dragCalculator.calculateDrag(altitude: h, velocity: v)
             let gravity = PhysicsConstants.gravity(at: h)
             let mass = dryMass + fuelMass
 
@@ -107,6 +114,17 @@ class FlightSimulator {
 
             time += timeStep
 
+            // Calculate temperature for thermal monitoring
+            let currentTemp = ThermalModel.calculateLeadingEdgeTemperature(altitude: h, velocity: v, planeDesign: planeDesign)
+
+            // Check thermal limits
+            let maxTemp = ThermalModel.getMaxTemperature(for: planeDesign)
+            if currentTemp > maxTemp {
+                print("THERMAL FAILURE: Temperature \(Int(currentTemp))°C exceeds limit \(Int(maxTemp))°C")
+                print("  at altitude \(Int(h * PhysicsConstants.metersToFeet)) ft, Mach \(String(format: "%.1f", speedMach))")
+                // Continue simulation but note the failure
+            }
+
             // Record trajectory point every 10 steps (1 second) to reduce data
             if Int(time * 10) % 10 == 0 {
                 trajectory.append(TrajectoryPoint(
@@ -114,7 +132,8 @@ class FlightSimulator {
                     altitude: h * PhysicsConstants.metersToFeet,
                     speed: v / PhysicsConstants.speedOfSoundSeaLevel,
                     fuelRemaining: max(0, fuelMass / PhysicsConstants.kgPerLiter),
-                    engineMode: propulsionManager.currentMode
+                    engineMode: propulsionManager.currentMode,
+                    temperature: currentTemp
                 ))
             }
 
@@ -148,12 +167,14 @@ class FlightSimulator {
         self.velocity = v
 
         // Create final trajectory point
+        let finalTemp = ThermalModel.calculateLeadingEdgeTemperature(altitude: h, velocity: v, planeDesign: planeDesign)
         trajectory.append(TrajectoryPoint(
             time: time,
             altitude: h * PhysicsConstants.metersToFeet,
             speed: v / PhysicsConstants.speedOfSoundSeaLevel,
             fuelRemaining: max(0, fuelMass / PhysicsConstants.kgPerLiter),
-            engineMode: propulsionManager.currentMode
+            engineMode: propulsionManager.currentMode,
+            temperature: finalTemp
         ))
 
         return FlightSegmentResult(
@@ -166,12 +187,6 @@ class FlightSimulator {
         )
     }
 
-    /// Calculate drag force
-    private func calculateDrag(altitude: Double, velocity: Double) -> Double {
-        let density = PhysicsConstants.atmosphericDensity(at: altitude)
-        // Drag = 0.5 * ρ * v² * C_d * A
-        return 0.5 * density * velocity * velocity * dragCoefficient * referenceArea
-    }
 
     /// Reset simulator state
     func reset(fuelLiters: Double = 50000.0) {

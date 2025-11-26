@@ -19,6 +19,7 @@ class SimulationScene: SKScene {
     private var fuelLabel: SKLabelNode?
     private var engineLabel: SKLabelNode?
     private var timeLabel: SKLabelNode?
+    private var temperatureLabel: SKLabelNode?
 
     // Graph
     private var graphNode: SKShapeNode?
@@ -56,12 +57,14 @@ class SimulationScene: SKScene {
         speedLabel = createInstrumentLabel(text: "Speed: Mach 0.0", position: CGPoint(x: panelX, y: size.height - 180))
         fuelLabel = createInstrumentLabel(text: "Fuel: 50,000 L", position: CGPoint(x: panelX, y: size.height - 210))
         engineLabel = createInstrumentLabel(text: "Engine: Jet", position: CGPoint(x: panelX, y: size.height - 240))
-        timeLabel = createInstrumentLabel(text: "Time: 0 s", position: CGPoint(x: panelX, y: size.height - 270))
+        temperatureLabel = createInstrumentLabel(text: "Temp: 0°C", position: CGPoint(x: panelX, y: size.height - 270))
+        timeLabel = createInstrumentLabel(text: "Time: 0 s", position: CGPoint(x: panelX, y: size.height - 300))
 
         if let label = altitudeLabel { addChild(label) }
         if let label = speedLabel { addChild(label) }
         if let label = fuelLabel { addChild(label) }
         if let label = engineLabel { addChild(label) }
+        if let label = temperatureLabel { addChild(label) }
         if let label = timeLabel { addChild(label) }
 
         // Graph area (right side)
@@ -179,6 +182,18 @@ class SimulationScene: SKScene {
             fuelLabel?.text = "Fuel: \(Int(lastPoint.fuelRemaining).formatted()) L"
             engineLabel?.text = "Engine: \(lastPoint.engineMode.rawValue)"
             timeLabel?.text = "Time: \(Int(lastPoint.time)) s"
+
+            // Update temperature with color-coding based on thermal stress
+            let tempColor: UIColor
+            if lastPoint.temperature > 600 {
+                tempColor = .red
+            } else if lastPoint.temperature > 550 {
+                tempColor = .orange
+            } else {
+                tempColor = .white
+            }
+            temperatureLabel?.text = "Temp: \(Int(lastPoint.temperature))°C"
+            temperatureLabel?.fontColor = tempColor
         }
     }
 

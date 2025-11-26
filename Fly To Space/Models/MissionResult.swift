@@ -14,6 +14,7 @@ struct TrajectoryPoint {
     let speed: Double // Mach number
     let fuelRemaining: Double // liters
     let engineMode: EngineMode
+    let temperature: Double // leading edge temperature in Celsius
 }
 
 /// Result of simulating one flight segment (between two waypoints)
@@ -55,7 +56,8 @@ struct MissionResult {
                     altitude: point.altitude,
                     speed: point.speed,
                     fuelRemaining: point.fuelRemaining,
-                    engineMode: point.engineMode
+                    engineMode: point.engineMode,
+                    temperature: point.temperature
                 )
                 allPoints.append(adjusted)
             }

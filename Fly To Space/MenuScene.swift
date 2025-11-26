@@ -12,6 +12,7 @@ class MenuScene: SKScene {
 
     private var titleLabel: SKLabelNode?
     private var newGameButton: SKLabelNode?
+    private var planeDesignButton: SKLabelNode?
     private var resumeGameButton: SKLabelNode?
     private var exitButton: SKLabelNode?
     private var jupiter: SKSpriteNode?
@@ -84,7 +85,7 @@ class MenuScene: SKScene {
 
         // Calculate button positioning with 25% margins
         let availableHeight = size.height * 0.5  // 50% of screen height for buttons (25% margin top and bottom)
-        let buttonSpacing: CGFloat = availableHeight / 4  // Divide space evenly
+        let buttonSpacing: CGFloat = availableHeight / 5  // Divide space evenly for 4 buttons
         let startY = size.height * 0.625  // Start at 62.5% from bottom (25% from top + some spacing)
 
         // New Game button
@@ -93,14 +94,20 @@ class MenuScene: SKScene {
             addChild(newGameButton)
         }
 
+        // Plane Design button
+        planeDesignButton = createButton(text: "Plane Design", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing))
+        if let planeDesignButton = planeDesignButton {
+            addChild(planeDesignButton)
+        }
+
         // Resume Game button
-        resumeGameButton = createButton(text: "Resume Game", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing))
+        resumeGameButton = createButton(text: "Resume Game", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 2))
         if let resumeGameButton = resumeGameButton {
             addChild(resumeGameButton)
         }
 
         // Exit button
-        exitButton = createButton(text: "Exit", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 2))
+        exitButton = createButton(text: "Exit", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 3))
         if let exitButton = exitButton {
             addChild(exitButton)
         }
@@ -143,6 +150,8 @@ class MenuScene: SKScene {
                 switch labelNode.name {
                 case "New Game":
                     startNewGame()
+                case "Plane Design":
+                    openPlaneDesign()
                 case "Resume Game":
                     resumeGame()
                 case "Exit":
@@ -162,6 +171,14 @@ class MenuScene: SKScene {
         let planningScene = FlightPlanningScene(size: size)
         planningScene.scaleMode = .aspectFill
         view?.presentScene(planningScene, transition: transition)
+    }
+
+    private func openPlaneDesign() {
+        // Open plane design screen
+        let transition = SKTransition.fade(withDuration: 1.0)
+        let designScene = PlaneDesignScene(size: size)
+        designScene.scaleMode = .aspectFill
+        view?.presentScene(designScene, transition: transition)
     }
 
     private func resumeGame() {

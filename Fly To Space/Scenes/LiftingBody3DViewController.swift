@@ -76,31 +76,12 @@ struct LiftingBody3DView: View {
         let scene = SCNScene()
         scene.background.contents = UIColor.black
 
-        // Lighting
+        // Lighting for wireframe visibility
         let ambientLight = SCNNode()
         ambientLight.light = SCNLight()
         ambientLight.light?.type = .ambient
-        ambientLight.light?.intensity = 500
+        ambientLight.light?.intensity = 1000
         scene.rootNode.addChildNode(ambientLight)
-
-        let dirLight = SCNNode()
-        dirLight.light = SCNLight()
-        dirLight.light?.type = .directional
-        dirLight.light?.intensity = 1000
-        dirLight.light?.castsShadow = true
-        dirLight.position = SCNVector3(5, 10, 5)
-        dirLight.look(at: SCNVector3(0,0,0))
-        scene.rootNode.addChildNode(dirLight)
-
-        // Grid floor
-        let floorGeo = SCNFloor()
-        floorGeo.reflectivity = 0.05
-        let floorMaterial = SCNMaterial()
-        floorMaterial.diffuse.contents = UIColor(white: 0.1, alpha: 1.0)
-        floorGeo.materials = [floorMaterial]
-        let floorNode = SCNNode(geometry: floorGeo)
-        floorNode.position = SCNVector3(0, -2, 0)
-        scene.rootNode.addChildNode(floorNode)
 
         return scene
     }()
@@ -120,7 +101,7 @@ struct LiftingBody3DView: View {
             SceneView(
                 scene: scene,
                 pointOfView: nil,
-                options: [.allowsCameraControl, .autoenablesDefaultLighting]
+                options: [.allowsCameraControl]
             )
             .edgesIgnoringSafeArea(.all)
             .onAppear {
@@ -151,10 +132,10 @@ struct LiftingBody3DView: View {
                     Spacer()
 
                     VStack(alignment: .trailing) {
-                        Text("3D Model")
+                        Text("3D Wireframe Model")
                             .font(.headline)
                             .foregroundColor(.white)
-                        Text("Lifting Body Design")
+                        Text("Drag to rotate")
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
@@ -163,45 +144,6 @@ struct LiftingBody3DView: View {
                 .background(.ultraThinMaterial)
 
                 Spacer()
-
-                // Design info panel
-                VStack(spacing: 12) {
-                    Text("Design Parameters")
-                        .font(.headline)
-                        .foregroundColor(.white)
-
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            InfoText(label: "Pitch", value: "\(Int(planeDesign.pitchAngle))°")
-                            InfoText(label: "Yaw", value: "\(Int(planeDesign.yawAngle))°")
-                            InfoText(label: "Position", value: "\(Int(planeDesign.position))")
-                        }
-
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 4) {
-                            InfoText(label: "Cone Angle", value: "\(String(format: "%.1f", coneAngle))°")
-                            InfoText(label: "Drag Mult", value: String(format: "%.2fx", planeDesign.dragMultiplier()))
-                            InfoText(label: "Thermal", value: String(format: "%.2fx", planeDesign.thermalLimitMultiplier()))
-                        }
-                    }
-
-                    // Score
-                    HStack {
-                        Text("Design Score:")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Spacer()
-                        Text("\(planeDesign.score())/100")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(scoreColor(planeDesign.score()))
-                    }
-                }
-                .padding()
-                .background(.ultraThinMaterial)
-                .cornerRadius(12)
-                .padding()
             }
         }
     }
@@ -209,8 +151,16 @@ struct LiftingBody3DView: View {
     private func setupCamera() {
         let cameraNode = SCNNode()
         cameraNode.camera = SCNCamera()
-        cameraNode.position = SCNVector3(12, 6, 12)
-        cameraNode.look(at: SCNVector3(0, 0, 0))
+
+        // Aircraft extends from x=0 (apex) to x=100m (tail)
+        // Width can be up to 300m at widest point
+        // Position camera to see entire aircraft centered
+        // Center point is around x=50m
+
+        // Position camera far enough to see 300m span and 100m length
+        cameraNode.position = SCNVector3(50, 0, 400)  // Centered on x=50, 400m back in z
+        cameraNode.look(at: SCNVector3(50, 0, 0))     // Look at center of aircraft
+
         scene.rootNode.addChildNode(cameraNode)
     }
 
@@ -223,22 +173,11 @@ struct LiftingBody3DView: View {
             slopeCurve: slopeCurve
         )
 
-        // Apply material based on thermal properties
+        // Apply wireframe material
         let material = SCNMaterial()
-        material.lightingModel = .physicallyBased
-
-        // Color based on thermal limit multiplier
-        let thermalMult = planeDesign.thermalLimitMultiplier()
-        if thermalMult < 0.8 {
-            material.diffuse.contents = UIColor.systemRed // Hot
-        } else if thermalMult > 1.1 {
-            material.diffuse.contents = UIColor.systemBlue // Cool
-        } else {
-            material.diffuse.contents = UIColor.systemGray // Neutral
-        }
-
-        material.metalness.contents = 0.6
-        material.roughness.contents = 0.3
+        material.diffuse.contents = UIColor.cyan
+        material.fillMode = .lines // Wireframe rendering
+        material.lightingModel = .constant // Unlit for better wireframe visibility
         newGeo.firstMaterial = material
 
         if let node = airplaneNode {
@@ -247,33 +186,6 @@ struct LiftingBody3DView: View {
             let node = SCNNode(geometry: newGeo)
             scene.rootNode.addChildNode(node)
             airplaneNode = node
-        }
-    }
-
-    private func scoreColor(_ score: Int) -> Color {
-        if score >= 80 {
-            return .green
-        } else if score >= 60 {
-            return .yellow
-        } else {
-            return .red
-        }
-    }
-}
-
-struct InfoText: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        HStack {
-            Text(label + ":")
-                .font(.caption)
-                .foregroundColor(.gray)
-            Text(value)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.white)
         }
     }
 }

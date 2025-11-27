@@ -5,451 +5,370 @@ import SceneKit.ModelIO
 
 // MARK: - Geometry Engine
 
-struct ProfilePoint {
-    let x: Float
-    let width: Float
+/// Represents a 2D airfoil cross-section
+struct AirfoilSection {
+    let centerX: Float      // Longitudinal position along aircraft
+    let centerY: Float      // Vertical position
+    let centerZ: Float      // Lateral position
+    let chord: Float        // Chord length of this section
+    let thickness: Float    // Maximum thickness ratio (as fraction of chord)
+    let scale: Float        // Overall scaling factor
+}
+
+/// Represents a point on an airfoil profile
+struct AirfoilPoint {
+    let x: Float  // Chordwise position (0 to 1)
+    let y: Float  // Vertical offset from chord line
 }
 
 class LiftingBodyEngine {
-    
+
+    // MARK: - Aircraft Dimensions
+    static let aircraftLength: Float = 100.0  // meters minimum length
+    static let maxWidth: Float = 300.0        // meters at widest point
+
+    // MARK: - Payload Box Constraints
+    static let payloadWidth: Float = 8.0    // meters
+    static let payloadHeight: Float = 8.0   // meters
+    static let payloadLength: Float = 16.0  // meters
+
     /// Generates the lifting body geometry based on the provided parameters.
     static func generateGeometry(
         coneAngle: Double,
         planeAngle: Double,
-        flatTopPct: Double,
-        heightFactor: Double,
-        slopeCurve: Double
+        flatTopPct: Double = 70,
+        heightFactor: Double = 10,
+        slopeCurve: Double = 1.5
     ) -> SCNGeometry {
-        
-        // 1. Setup Parameters
-        let length: Float = 10.0
-        let segmentsX: Int = 60
-        let segmentsY: Int = 30
-        
-        // 2. Calculate Leading Edge Profile (XY Shape)
+
         // Convert angles to radians
         let alpha = Float(coneAngle) * (Float.pi / 180.0)
         let beta = Float(planeAngle) * (Float.pi / 180.0)
-        
-        let profile = calculateProfile(
-            length: length,
-            segments: segmentsX,
-            alpha: alpha,
-            beta: beta
+
+        // Define cross-sections along the length
+        let sections = generateCrossSections(
+            coneAngle: alpha,
+            planeAngle: beta
         )
-        
-        // 3. Calculate Area (Trapezoidal Rule)
-        var area: Float = 0
-        for i in 0..<(profile.count - 1) {
-            let w1 = profile[i].width * 2
-            let w2 = profile[i+1].width * 2
-            let dx = profile[i+1].x - profile[i].x
-            area += (w1 + w2) * 0.5 * dx
-        }
-        
-        // 4. Determine Max Z Height
-        let maxZ = area * Float(heightFactor / 100.0)
-        
-        // 5. Build Vertices and Indices
-        var vertices: [SCNVector3] = []
-        var indices: [Int32] = []
-        
-        let flatScale = sqrt(Float(flatTopPct / 100.0))
-        
-        // --- Top Surface ---
-        for i in 0...segmentsX {
-            let p = profile[i]
-            
-            for j in 0...segmentsY {
-                let v = Float(j) / Float(segmentsY)
-                // Map v to actual width coordinates (-width to +width)
-                let zPos = (v - 0.5) * 2 * p.width // Width mapped to Z axis in SceneKit
-                
-                let distFromCenter = abs((v - 0.5) * 2)
-                
-                var yPos: Float = 0 // Height mapped to Y axis in SceneKit
-                
-                if p.width < 0.001 {
-                    yPos = 0
-                } else if distFromCenter <= flatScale {
-                    yPos = maxZ
-                } else {
-                    let slopePos = (distFromCenter - flatScale) / (1.0 - flatScale)
-                    let curveVal = pow(slopePos, Float(slopeCurve))
-                    yPos = maxZ * (1.0 - curveVal)
-                }
-                
-                // Centering the model on X
-                vertices.append(SCNVector3(p.x - (length/2), yPos, zPos))
-            }
-        }
-        
-        // Indices for Top Surface
-        for i in 0..<segmentsX {
-            for j in 0..<segmentsY {
-                let rowLen = segmentsY + 1
-                let a = Int32(i * rowLen + j)
-                let b = Int32(i * rowLen + (j + 1))
-                let c = Int32((i + 1) * rowLen + j)
-                let d = Int32((i + 1) * rowLen + (j + 1))
-                
-                // Triangle 1
-                indices.append(contentsOf: [a, b, d])
-                // Triangle 2
-                indices.append(contentsOf: [a, d, c])
-            }
-        }
-        
-        // --- Bottom Cap ---
-        let bottomOffset = Int32(vertices.count)
-        
-        for i in 0...segmentsX {
-            let p = profile[i]
-            for j in 0...segmentsY {
-                let v = Float(j) / Float(segmentsY)
-                let zPos = (v - 0.5) * 2 * p.width
-                // Bottom is flat at Y = 0
-                vertices.append(SCNVector3(p.x - (length/2), 0, zPos))
-            }
-        }
-        
-        // Indices for Bottom Cap (Reversed winding order for downward face)
-        for i in 0..<segmentsX {
-            for j in 0..<segmentsY {
-                let rowLen = segmentsY + 1
-                let a = bottomOffset + Int32(i * rowLen + j)
-                let b = bottomOffset + Int32(i * rowLen + (j + 1))
-                let c = bottomOffset + Int32((i + 1) * rowLen + j)
-                let d = bottomOffset + Int32((i + 1) * rowLen + (j + 1))
-                
-                // Triangle 1
-                indices.append(contentsOf: [a, d, b])
-                // Triangle 2
-                indices.append(contentsOf: [a, c, d])
-            }
-        }
-        
-        // --- Trailing Edge Closure ---
-        // Connect the last row of top to last row of bottom
-        let lastRow = segmentsX
-        let rowLen = segmentsY + 1
-        let topStart = Int32(lastRow * rowLen)
-        let botStart = bottomOffset + Int32(lastRow * rowLen)
-        
-        for j in 0..<segmentsY {
-            let topCurrent = topStart + Int32(j)
-            let topNext = topStart + Int32(j + 1)
-            let botCurrent = botStart + Int32(j)
-            let botNext = botStart + Int32(j + 1)
-            
-            // Quad split into two triangles
-            indices.append(contentsOf: [topCurrent, botCurrent, topNext])
-            indices.append(contentsOf: [topNext, botCurrent, botNext])
-        }
-        
-        // 6. Create Geometry Sources
-        let vertexSource = SCNGeometrySource(vertices: vertices)
-        let element = SCNGeometryElement(indices: indices, primitiveType: .triangles)
-        
-        let geometry = SCNGeometry(sources: [vertexSource], elements: [element])
-        
-        // 7. Calculate Normals using ModelIO
-        // This makes the surface smooth instead of faceted or broken
-        let mdlMesh = MDLMesh(scnGeometry: geometry)
-        mdlMesh.addNormals(withAttributeNamed: MDLVertexAttributeNormal, creaseThreshold: 0.5)
-        
-        return SCNGeometry(mdlMesh: mdlMesh)
-    }
-    
-    private static func calculateProfile(length: Float, segments: Int, alpha: Float, beta: Float) -> [ProfilePoint] {
-        var profile: [ProfilePoint] = []
-        
-        // Geometric shape factor
-        // Avoid division by zero
-        let cosAlpha = cos(alpha)
-        let k = abs(cos(beta) / (cosAlpha == 0 ? 0.001 : cosAlpha))
-        let shapePower = 0.5 + (k * 0.5)
-        
-        for i in 0...segments {
-            let t = Float(i) / Float(segments)
-            let xPos = t * length
-            
-            var width: Float = 0
-            if xPos > 0.001 {
-                width = pow(xPos, shapePower) * (1.5 + sin(alpha))
-            }
-            
-            profile.append(ProfilePoint(x: xPos, width: width))
-        }
-        
-        return profile
-    }
-}
 
-// MARK: - SwiftUI View
+        // Generate mesh from cross-sections using NURBS-like interpolation
+        return generateMeshFromSections(sections: sections)
+    }
 
-struct ContentView: View {
-    // --- State ---
-    @State private var coneAngle: Double = 30
-    @State private var planeAngle: Double = 15
-    @State private var flatTopPct: Double = 70
-    @State private var heightFactor: Double = 10
-    @State private var slopeCurve: Double = 1.5
-    @State private var isBlueMaterial: Bool = false
-    
-    // --- Scene ---
-    @State private var scene: SCNScene = {
-        let scene = SCNScene()
-        scene.background.contents = UIColor.systemGroupedBackground
-        
-        // Lighting
-        let ambientLight = SCNNode()
-        ambientLight.light = SCNLight()
-        ambientLight.light?.type = .ambient
-        ambientLight.light?.intensity = 500
-        scene.rootNode.addChildNode(ambientLight)
-        
-        let dirLight = SCNNode()
-        dirLight.light = SCNLight()
-        dirLight.light?.type = .directional
-        dirLight.light?.intensity = 1000
-        dirLight.light?.castsShadow = true
-        dirLight.position = SCNVector3(5, 10, 5)
-        dirLight.look(at: SCNVector3(0,0,0))
-        scene.rootNode.addChildNode(dirLight)
-        
-        // Floor
-        let floorGeo = SCNFloor()
-        floorGeo.reflectivity = 0.1
-        let floorNode = SCNNode(geometry: floorGeo)
-        floorNode.position = SCNVector3(0, -2, 0) // Slightly below
-        scene.rootNode.addChildNode(floorNode)
-        
-        return scene
-    }()
-    
-    // Node reference to update geometry without rebuilding scene
-    @State private var airplaneNode: SCNNode?
-    
-    var body: some View {
-        ZStack {
-            // 3D Viewport
-            SceneView(
-                scene: scene,
-                pointOfView: nil,
-                options: [.allowsCameraControl, .autoenablesDefaultLighting],
-                delegate: nil
+    // MARK: - NACA Airfoil Generation
+
+    /// Generate NACA 4-digit airfoil coordinates
+    /// Uses NACA 0012 (symmetric, 12% thickness) as base profile
+    static func generateNACA4DigitAirfoil(
+        thickness: Float,  // Maximum thickness as percentage of chord (e.g., 0.12 for 12%)
+        numPoints: Int = 50
+    ) -> [AirfoilPoint] {
+
+        var points: [AirfoilPoint] = []
+
+        // Generate upper surface (0 to 1)
+        for i in 0...numPoints {
+            let x = Float(i) / Float(numPoints)
+
+            // NACA symmetric airfoil thickness distribution
+            // yt = 5*t*(0.2969*sqrt(x) - 0.1260*x - 0.3516*x^2 + 0.2843*x^3 - 0.1015*x^4)
+            let t = thickness
+            let yt = 5.0 * t * (
+                0.2969 * sqrt(x) -
+                0.1260 * x -
+                0.3516 * x * x +
+                0.2843 * x * x * x -
+                0.1015 * x * x * x * x
             )
-            .edgesIgnoringSafeArea(.all)
-            .onAppear {
-                updateGeometry()
-            }
-            // Trigger updates when state changes
-            .onChange(of: coneAngle) { _ in updateGeometry() }
-            .onChange(of: planeAngle) { _ in updateGeometry() }
-            .onChange(of: flatTopPct) { _ in updateGeometry() }
-            .onChange(of: heightFactor) { _ in updateGeometry() }
-            .onChange(of: slopeCurve) { _ in updateGeometry() }
-            .onChange(of: isBlueMaterial) { _ in updateMaterial() }
-            
-            // Header
-            VStack {
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("AeroDesign")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        Text("Lifting Body Prototype")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    
-                    Button(action: { isBlueMaterial.toggle() }) {
-                        Circle()
-                            .fill(isBlueMaterial ? Color.blue : Color.gray)
-                            .frame(width: 30, height: 30)
-                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                            .shadow(radius: 2)
-                    }
-                }
-                .padding()
-                .background(.ultraThinMaterial)
-                
-                Spacer()
-                
-                // Controls ScrollView
-                ScrollView {
-                    VStack(spacing: 20) {
-                        
-                        ControlGroup(title: "Geometry Base", icon: "cube.transparent") {
-                            SliderRow(label: "Cone Angle", value: $coneAngle, range: 10...60)
-                            SliderRow(label: "Plane Intersection", value: $planeAngle, range: 0...45)
-                        }
-                        
-                        ControlGroup(title: "Top Surface", icon: "arrow.up.left.and.arrow.down.right") {
-                            SliderRow(label: "Flat Top Area %", value: $flatTopPct, range: 10...90)
-                            SliderRow(label: "Z-Height (Volume)", value: $heightFactor, range: 2...25)
-                            SliderRow(label: "Slope Curve", value: $slopeCurve, range: 0.5...3.0)
-                        }
-                        
-                        // Info Box
-                        VStack(spacing: 8) {
-                            InfoRow(key: "Class", value: "Lifting Body")
-                            InfoRow(key: "Symmetry", value: "Axial (XZ)")
-                            InfoRow(key: "Material", value: "Ceramic Composite")
-                        }
-                        .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
-                        )
-                    }
-                    .padding()
-                }
-                .frame(maxHeight: 350)
-                .background(.ultraThinMaterial)
-                .cornerRadius(20, corners: [.topLeft, .topRight])
-                .padding(.bottom, 0)
-            }
+
+            points.append(AirfoilPoint(x: x, y: yt))
         }
+
+        // Generate lower surface (1 to 0) - symmetric so just negate y
+        for i in (0..<numPoints).reversed() {
+            let x = Float(i) / Float(numPoints)
+            let t = thickness
+            let yt = 5.0 * t * (
+                0.2969 * sqrt(x) -
+                0.1260 * x -
+                0.3516 * x * x +
+                0.2843 * x * x * x -
+                0.1015 * x * x * x * x
+            )
+
+            points.append(AirfoilPoint(x: x, y: -yt))
+        }
+
+        return points
     }
-    
-    // Logic to rebuild the mesh
-    private func updateGeometry() {
-        // Generate new geometry
-        let newGeo = LiftingBodyEngine.generateGeometry(
-            coneAngle: coneAngle,
-            planeAngle: planeAngle,
-            flatTopPct: flatTopPct,
-            heightFactor: heightFactor,
-            slopeCurve: slopeCurve
-        )
-        
-        // Apply material
-        let material = SCNMaterial()
-        material.lightingModel = .physicallyBased
-        material.diffuse.contents = isBlueMaterial ? UIColor.systemBlue : UIColor.systemGray5
-        material.metalness.contents = 0.6
-        material.roughness.contents = 0.2
-        newGeo.firstMaterial = material
-        
-        // Update Scene Node
-        if let node = airplaneNode {
-            node.geometry = newGeo
+
+    // MARK: - Cross-Section Generation
+
+    /// Generate cross-sections along the aircraft length
+    /// Leading edge defined by cone-plane intersection at z=0
+    /// Apex at (0,0,0), symmetric in y
+    static func generateCrossSections(
+        coneAngle: Float,
+        planeAngle: Float
+    ) -> [AirfoilSection] {
+
+        var sections: [AirfoilSection] = []
+
+        let numSections = 60
+
+        // Leading edge is at z=0, defined by cone-plane intersection
+        // Cone equation: y² + z² = (x * tan(α))²
+        // At z=0: y = ± x * tan(α)
+        // This gives us the width at each x position
+
+        // Calculate x range: apex at origin, extend back to create 100m+ length
+        // and ensure 300m+ width at widest point
+        let xEnd = aircraftLength  // Extend to 100m from apex
+
+        for i in 0...numSections {
+            let t = Float(i) / Float(numSections)  // 0 to 1
+
+            // x goes from apex (0) backward to -xEnd
+            // This gives leading edge from nose (0,0,0) backward
+            let x = t * xEnd
+
+            // Calculate half-width at this x from cone-plane intersection
+            // y = x * tan(coneAngle)
+            let halfWidth = x * tan(coneAngle)
+
+            // Ensure minimum dimensions for payload and max width
+            let actualHalfWidth: Float
+            if halfWidth < maxWidth / 2.0 {
+                actualHalfWidth = halfWidth
+            } else {
+                actualHalfWidth = maxWidth / 2.0  // Cap at max width
+            }
+
+            // Calculate height using NACA airfoil thickness
+            // Height is maximum at center and tapers toward edges
+            let maxHeight = calculateHeightAtPosition(x: x, halfWidth: actualHalfWidth)
+
+            // Thickness ratio for NACA airfoil (scaled to provide proper height)
+            let thicknessRatio = min(0.15, maxHeight / max(actualHalfWidth * 2.0, 1.0))
+
+            // Create airfoil section
+            let section = AirfoilSection(
+                centerX: x,
+                centerY: 0,
+                centerZ: 0,  // Leading edge at z=0
+                chord: actualHalfWidth * 2.0,  // Full width (span)
+                thickness: thicknessRatio,
+                scale: 1.0
+            )
+
+            sections.append(section)
+        }
+
+        return sections
+    }
+
+    /// Calculate height at longitudinal position x
+    /// Height accommodates payload in center section
+    static func calculateHeightAtPosition(
+        x: Float,
+        halfWidth: Float
+    ) -> Float {
+
+        // Payload region (middle section) needs 8m height
+        let payloadStart: Float = 30.0  // Start payload region at x=30m
+        let payloadEnd: Float = 50.0    // End payload region at x=50m
+
+        var height: Float
+
+        if x >= payloadStart && x <= payloadEnd {
+            // Payload region - constant height to fit 8m payload
+            height = payloadHeight
+        } else if x < payloadStart {
+            // Forward section - taper from payload height to thinner nose
+            if x < 0.1 {
+                // Very nose - minimal height
+                height = 0.3
+            } else {
+                let t = x / payloadStart
+                // Smooth taper
+                height = 0.3 + (payloadHeight - 0.3) * pow(t, 1.2)
+            }
         } else {
-            let node = SCNNode(geometry: newGeo)
-            // Initial positioning if needed
-            scene.rootNode.addChildNode(node)
-            airplaneNode = node
-            
-            // Focus camera slightly
-            let cameraNode = SCNNode()
-            cameraNode.camera = SCNCamera()
-            cameraNode.position = SCNVector3(10, 8, 10)
-            cameraNode.look(at: SCNVector3(0, 0, 0))
-            scene.rootNode.addChildNode(cameraNode)
+            // Aft section - taper from payload height to thinner tail
+            let dist = x - payloadEnd
+            let totalAftDist = aircraftLength - payloadEnd
+            let t = 1.0 - (dist / totalAftDist)
+            // Smooth taper to trailing edge
+            height = 0.5 + (payloadHeight - 0.5) * pow(t, 1.5)
         }
-    }
-    
-    private func updateMaterial() {
-        guard let material = airplaneNode?.geometry?.firstMaterial else { return }
-        SCNTransaction.begin()
-        SCNTransaction.animationDuration = 0.3
-        material.diffuse.contents = isBlueMaterial ? UIColor.systemBlue : UIColor.systemGray5
-        SCNTransaction.commit()
-    }
-}
 
-// MARK: - Helper UI Components
+        // Also scale height based on width (narrower = thinner)
+        // Near leading edge (small width), reduce height
+        let widthFactor = min(1.0, halfWidth / 50.0)  // Full height at 50m+ half-width
+        height *= widthFactor
 
-struct SliderRow: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(label)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                Spacer()
-                Text(String(format: "%.1f", value))
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
+        return max(0.3, height)
+    }
+
+    // MARK: - Mesh Generation with NURBS-like Interpolation
+
+    /// Generate mesh from cross-sections using smooth interpolation
+    static func generateMeshFromSections(sections: [AirfoilSection]) -> SCNGeometry {
+
+        var vertices: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        var indices: [Int32] = []
+
+        let circumferentialPoints = 40  // Points around each cross-section
+
+        // Generate vertices for each cross-section
+        for (sectionIdx, section) in sections.enumerated() {
+            let airfoil = generateNACA4DigitAirfoil(thickness: section.thickness)
+
+            // Sample airfoil points evenly around the profile
+            for i in 0..<circumferentialPoints {
+                let t = Float(i) / Float(circumferentialPoints)
+                let airfoilIdx = Int(t * Float(airfoil.count - 1))
+                let point = airfoil[airfoilIdx]
+
+                // Scale airfoil to section dimensions
+                // Leading edge is at z=0
+                // Airfoil chord extends in y direction (spanwise)
+                // Airfoil thickness extends in z direction (vertical/height)
+
+                let spanPos = (point.x - 0.5) * section.chord     // -chord/2 to +chord/2 (spanwise)
+                let heightPos = point.y * section.chord           // Scaled height
+
+                // Position in 3D space:
+                // X = longitudinal (backward from apex at origin)
+                // Y = lateral/spanwise (symmetric)
+                // Z = vertical/height (leading edge at z=0)
+                let vertex = SCNVector3(
+                    section.centerX,           // Longitudinal position
+                    spanPos,                   // Spanwise position (symmetric ±y)
+                    heightPos                  // Height (from leading edge at z=0)
+                )
+
+                vertices.append(vertex)
             }
-            Slider(value: $value, in: range)
         }
-    }
-}
 
-struct ControlGroup<Content: View>: View {
-    let title: String
-    let icon: String
-    let content: Content
-    
-    init(title: String, icon: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.icon = icon
-        self.content = content()
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .foregroundColor(.blue)
-                    .font(.caption)
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                    .textCase(.uppercase)
+        // Generate indices to connect cross-sections
+        for sectionIdx in 0..<(sections.count - 1) {
+            let currentRingStart = sectionIdx * circumferentialPoints
+            let nextRingStart = (sectionIdx + 1) * circumferentialPoints
+
+            for i in 0..<circumferentialPoints {
+                let i1 = currentRingStart + i
+                let i2 = currentRingStart + (i + 1) % circumferentialPoints
+                let i3 = nextRingStart + i
+                let i4 = nextRingStart + (i + 1) % circumferentialPoints
+
+                // Create two triangles for each quad
+                indices.append(contentsOf: [
+                    Int32(i1), Int32(i2), Int32(i3),
+                    Int32(i2), Int32(i4), Int32(i3)
+                ])
             }
-            .padding(.bottom, 4)
-            Divider()
-            content
         }
-    }
-}
 
-struct InfoRow: View {
-    let key: String
-    let value: String
-    
-    var body: some View {
-        HStack {
-            Text(key)
-                .font(.caption)
-                .foregroundColor(.blue)
-            Spacer()
-            Text(value)
-                .font(.caption)
-                .fontDesign(.monospaced)
-                .foregroundColor(.blue)
+        // Calculate normals
+        normals = calculateNormals(vertices: vertices, indices: indices)
+
+        // Close the nose (first section at apex x=0)
+        let noseCenterIdx = Int32(vertices.count)
+        vertices.append(SCNVector3(0, 0, 0))  // Apex at origin
+        normals.append(SCNVector3(-1, 0, 0))
+
+        for i in 0..<circumferentialPoints {
+            let i1 = i
+            let i2 = (i + 1) % circumferentialPoints
+            indices.append(contentsOf: [
+                noseCenterIdx, Int32(i2), Int32(i1)
+            ])
         }
+
+        // Close the tail (last section at x=100m)
+        let tailCenterIdx = Int32(vertices.count)
+        let lastRingStart = (sections.count - 1) * circumferentialPoints
+        vertices.append(SCNVector3(sections.last!.centerX, 0, 0))  // Centerline
+        normals.append(SCNVector3(1, 0, 0))
+
+        for i in 0..<circumferentialPoints {
+            let i1 = lastRingStart + i
+            let i2 = lastRingStart + (i + 1) % circumferentialPoints
+            indices.append(contentsOf: [
+                tailCenterIdx, Int32(i1), Int32(i2)
+            ])
+        }
+
+        // Create geometry
+        let vertexSource = SCNGeometrySource(vertices: vertices)
+        let normalSource = SCNGeometrySource(normals: normals)
+        let indexData = Data(bytes: indices, count: indices.count * MemoryLayout<Int32>.size)
+        let element = SCNGeometryElement(
+            data: indexData,
+            primitiveType: .triangles,
+            primitiveCount: indices.count / 3,
+            bytesPerIndex: MemoryLayout<Int32>.size
+        )
+
+        return SCNGeometry(sources: [vertexSource, normalSource], elements: [element])
     }
-}
 
-// Extension for corner radius on specific corners
-extension View {
-    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
-        clipShape( RoundedCorner(radius: radius, corners: corners) )
-    }
-}
+    /// Calculate vertex normals from triangle data
+    static func calculateNormals(vertices: [SCNVector3], indices: [Int32]) -> [SCNVector3] {
+        var normals = [SCNVector3](repeating: SCNVector3(0, 0, 0), count: vertices.count)
 
-struct RoundedCorner: Shape {
-    var radius: CGFloat = .infinity
-    var corners: UIRectCorner = .allCorners
+        // Accumulate face normals
+        for i in stride(from: 0, to: indices.count, by: 3) {
+            let i0 = Int(indices[i])
+            let i1 = Int(indices[i + 1])
+            let i2 = Int(indices[i + 2])
 
-    func path(in rect: CGRect) -> Path {
-        let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
-        return Path(path.cgPath)
+            let v0 = vertices[i0]
+            let v1 = vertices[i1]
+            let v2 = vertices[i2]
+
+            // Calculate face normal
+            let edge1 = SCNVector3(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z)
+            let edge2 = SCNVector3(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z)
+
+            let normal = SCNVector3(
+                edge1.y * edge2.z - edge1.z * edge2.y,
+                edge1.z * edge2.x - edge1.x * edge2.z,
+                edge1.x * edge2.y - edge1.y * edge2.x
+            )
+
+            // Accumulate to vertices
+            normals[i0] = SCNVector3(
+                normals[i0].x + normal.x,
+                normals[i0].y + normal.y,
+                normals[i0].z + normal.z
+            )
+            normals[i1] = SCNVector3(
+                normals[i1].x + normal.x,
+                normals[i1].y + normal.y,
+                normals[i1].z + normal.z
+            )
+            normals[i2] = SCNVector3(
+                normals[i2].x + normal.x,
+                normals[i2].y + normal.y,
+                normals[i2].z + normal.z
+            )
+        }
+
+        // Normalize
+        for i in 0..<normals.count {
+            let n = normals[i]
+            let length = sqrt(n.x * n.x + n.y * n.y + n.z * n.z)
+            if length > 0.001 {
+                normals[i] = SCNVector3(n.x / length, n.y / length, n.z / length)
+            } else {
+                normals[i] = SCNVector3(0, 1, 0)
+            }
+        }
+
+        return normals
     }
 }

@@ -20,6 +20,17 @@ class FlightPlanningScene: SKScene {
     private var simulateButton: SKLabelNode?
     private var backButton: SKLabelNode?
 
+    // Graph elements
+    private var graphNode: SKNode?
+    private var graphPoints: [SKShapeNode] = []
+    private var graphLines: [SKShapeNode] = []
+    private var xAxisLabels: [SKLabelNode] = []
+    private var yAxisLabels: [SKLabelNode] = []
+
+    // Graph parameters
+    private var maxTimeMinutes: CGFloat = 60.0 // X-axis max (minutes)
+    private var maxAltitudeKm: CGFloat = 20.0  // Y-axis max (kilometers)
+
     // Current waypoint being edited
     private var currentAltitudeThousands: Int = 100 // In thousands of feet
     private var currentSpeed: Double = 10.0
@@ -33,7 +44,9 @@ class FlightPlanningScene: SKScene {
         flightPlan = GameManager.shared.getFlightPlan()
 
         setupUI()
+        setupGraph()
         refreshWaypointList()
+        updateGraph()
     }
 
     private func setupUI() {
@@ -132,6 +145,245 @@ class FlightPlanningScene: SKScene {
         if let button = backButton {
             addChild(button)
         }
+    }
+
+    private func setupGraph() {
+        // Create main graph container
+        graphNode = SKNode()
+        if let graph = graphNode {
+            addChild(graph)
+        }
+
+        // Graph dimensions - centered on screen
+        let graphWidth = size.width * 0.5
+        let graphHeight = size.height * 0.6
+        let graphCenterX = size.width * 0.35
+        let graphCenterY = size.height * 0.45
+
+        // Draw axes
+        // Y-axis (vertical, in the middle)
+        let yAxis = SKShapeNode()
+        let yAxisPath = CGMutablePath()
+        yAxisPath.move(to: CGPoint(x: graphCenterX, y: graphCenterY - graphHeight / 2))
+        yAxisPath.addLine(to: CGPoint(x: graphCenterX, y: graphCenterY + graphHeight / 2))
+        yAxis.path = yAxisPath
+        yAxis.strokeColor = .white
+        yAxis.lineWidth = 2
+        graphNode?.addChild(yAxis)
+
+        // X-axis (horizontal, along the bottom)
+        let xAxis = SKShapeNode()
+        let xAxisPath = CGMutablePath()
+        xAxisPath.move(to: CGPoint(x: graphCenterX, y: graphCenterY - graphHeight / 2))
+        xAxisPath.addLine(to: CGPoint(x: graphCenterX + graphWidth / 2, y: graphCenterY - graphHeight / 2))
+        xAxis.path = xAxisPath
+        xAxis.strokeColor = .white
+        xAxis.lineWidth = 2
+        graphNode?.addChild(xAxis)
+
+        // Add grid lines and labels
+        drawGraphGrid(centerX: graphCenterX, centerY: graphCenterY, width: graphWidth, height: graphHeight)
+
+        // Add axis titles
+        let xTitle = SKLabelNode(text: "Time (minutes)")
+        xTitle.fontName = "AvenirNext-Medium"
+        xTitle.fontSize = 14
+        xTitle.fontColor = .white
+        xTitle.position = CGPoint(x: graphCenterX + graphWidth / 4, y: graphCenterY - graphHeight / 2 - 40)
+        graphNode?.addChild(xTitle)
+
+        let yTitle = SKLabelNode(text: "Altitude (km)")
+        yTitle.fontName = "AvenirNext-Medium"
+        yTitle.fontSize = 14
+        yTitle.fontColor = .white
+        yTitle.position = CGPoint(x: graphCenterX - 60, y: graphCenterY + graphHeight / 2 + 10)
+        graphNode?.addChild(yTitle)
+    }
+
+    private func drawGraphGrid(centerX: CGFloat, centerY: CGFloat, width: CGFloat, height: CGFloat) {
+        // Clear old labels
+        for label in xAxisLabels {
+            label.removeFromParent()
+        }
+        for label in yAxisLabels {
+            label.removeFromParent()
+        }
+        xAxisLabels.removeAll()
+        yAxisLabels.removeAll()
+
+        // X-axis labels (time in minutes)
+        let numXDivisions = 6
+        for i in 0...numXDivisions {
+            let fraction = CGFloat(i) / CGFloat(numXDivisions)
+            let xPos = centerX + (width / 2) * fraction
+            let yPos = centerY - height / 2
+
+            // Grid line
+            if i > 0 {
+                let gridLine = SKShapeNode()
+                let gridPath = CGMutablePath()
+                gridPath.move(to: CGPoint(x: xPos, y: yPos))
+                gridPath.addLine(to: CGPoint(x: xPos, y: centerY + height / 2))
+                gridLine.path = gridPath
+                gridLine.strokeColor = UIColor(white: 0.3, alpha: 0.5)
+                gridLine.lineWidth = 1
+                graphNode?.addChild(gridLine)
+            }
+
+            // Label
+            let timeValue = Int(maxTimeMinutes * fraction)
+            let label = SKLabelNode(text: "\(timeValue)")
+            label.fontName = "AvenirNext-Regular"
+            label.fontSize = 12
+            label.fontColor = .gray
+            label.position = CGPoint(x: xPos, y: yPos - 20)
+            graphNode?.addChild(label)
+            xAxisLabels.append(label)
+        }
+
+        // Y-axis labels (altitude in km)
+        let numYDivisions = 5
+        for i in 0...numYDivisions {
+            let fraction = CGFloat(i) / CGFloat(numYDivisions)
+            let xPos = centerX
+            let yPos = centerY - height / 2 + height * fraction
+
+            // Grid line
+            if i > 0 {
+                let gridLine = SKShapeNode()
+                let gridPath = CGMutablePath()
+                gridPath.move(to: CGPoint(x: xPos, y: yPos))
+                gridPath.addLine(to: CGPoint(x: centerX + width / 2, y: yPos))
+                gridLine.path = gridPath
+                gridLine.strokeColor = UIColor(white: 0.3, alpha: 0.5)
+                gridLine.lineWidth = 1
+                graphNode?.addChild(gridLine)
+            }
+
+            // Label
+            let altValue = Int(maxAltitudeKm * fraction)
+            let label = SKLabelNode(text: "\(altValue)")
+            label.fontName = "AvenirNext-Regular"
+            label.fontSize = 12
+            label.fontColor = .gray
+            label.position = CGPoint(x: xPos - 30, y: yPos - 5)
+            label.horizontalAlignmentMode = .right
+            graphNode?.addChild(label)
+            yAxisLabels.append(label)
+        }
+    }
+
+    private func updateGraph() {
+        // Clear old graph elements
+        for point in graphPoints {
+            point.removeFromParent()
+        }
+        for line in graphLines {
+            line.removeFromParent()
+        }
+        graphPoints.removeAll()
+        graphLines.removeAll()
+
+        // Calculate time-altitude points from waypoints
+        var timePoints: [(time: Double, altitude: Double)] = []
+        var cumulativeTime: Double = 0.0
+
+        for i in 0..<flightPlan.waypoints.count {
+            let waypoint = flightPlan.waypoints[i]
+
+            if i > 0 {
+                // Calculate time to reach this waypoint from previous
+                let prevWaypoint = flightPlan.waypoints[i - 1]
+                let altitudeDiff = abs(waypoint.altitude - prevWaypoint.altitude) // feet
+
+                // Estimate horizontal distance (simplified - assumes 45-degree climb/descent)
+                let verticalDistance = altitudeDiff
+                let horizontalDistance = sqrt(2.0) * verticalDistance // Rough estimate
+
+                // Calculate time based on speed at the new endpoint
+                let speedFeetPerSecond = waypoint.speed * PhysicsConstants.speedOfSoundSeaLevel * PhysicsConstants.metersToFeet
+                let timeSeconds = horizontalDistance / speedFeetPerSecond
+                cumulativeTime += timeSeconds
+            }
+
+            let altitudeKm = waypoint.altitude * PhysicsConstants.feetToMeters / 1000.0
+            timePoints.append((time: cumulativeTime / 60.0, altitude: altitudeKm)) // Convert to minutes
+        }
+
+        // Adapt graph scale if needed
+        adaptGraphScale(timePoints: timePoints)
+
+        // Draw points and lines
+        let graphWidth = size.width * 0.5
+        let graphHeight = size.height * 0.6
+        let graphCenterX = size.width * 0.35
+        let graphCenterY = size.height * 0.45
+
+        for i in 0..<timePoints.count {
+            let point = timePoints[i]
+
+            // Calculate screen position
+            let xFraction = CGFloat(point.time / maxTimeMinutes)
+            let yFraction = CGFloat(point.altitude / maxAltitudeKm)
+
+            let screenX = graphCenterX + (graphWidth / 2) * xFraction
+            let screenY = graphCenterY - graphHeight / 2 + graphHeight * yFraction
+
+            // Draw circle at point
+            let circle = SKShapeNode(circleOfRadius: 5)
+            circle.fillColor = .cyan
+            circle.strokeColor = .white
+            circle.lineWidth = 2
+            circle.position = CGPoint(x: screenX, y: screenY)
+            graphNode?.addChild(circle)
+            graphPoints.append(circle)
+
+            // Draw line from previous point
+            if i > 0 {
+                let prevPoint = timePoints[i - 1]
+                let prevXFraction = CGFloat(prevPoint.time / maxTimeMinutes)
+                let prevYFraction = CGFloat(prevPoint.altitude / maxAltitudeKm)
+
+                let prevScreenX = graphCenterX + (graphWidth / 2) * prevXFraction
+                let prevScreenY = graphCenterY - graphHeight / 2 + graphHeight * prevYFraction
+
+                let line = SKShapeNode()
+                let linePath = CGMutablePath()
+                linePath.move(to: CGPoint(x: prevScreenX, y: prevScreenY))
+                linePath.addLine(to: CGPoint(x: screenX, y: screenY))
+                line.path = linePath
+                line.strokeColor = .cyan
+                line.lineWidth = 2
+                graphNode?.addChild(line)
+                graphLines.append(line)
+            }
+        }
+    }
+
+    private func adaptGraphScale(timePoints: [(time: Double, altitude: Double)]) {
+        // Find max values in data
+        var maxTime: Double = 60.0 // Default to 60 minutes
+        var maxAlt: Double = 20.0  // Default to 20 km
+
+        for point in timePoints {
+            maxTime = max(maxTime, point.time)
+            maxAlt = max(maxAlt, point.altitude)
+        }
+
+        // Round up to nice values
+        maxTimeMinutes = CGFloat(ceil(maxTime / 10.0) * 10.0) // Round to nearest 10 minutes
+        maxAltitudeKm = CGFloat(ceil(maxAlt / 5.0) * 5.0)     // Round to nearest 5 km
+
+        // Ensure minimum scale
+        maxTimeMinutes = max(60, maxTimeMinutes)
+        maxAltitudeKm = max(20, maxAltitudeKm)
+
+        // Redraw grid with new scale
+        let graphWidth = size.width * 0.5
+        let graphHeight = size.height * 0.6
+        let graphCenterX = size.width * 0.35
+        let graphCenterY = size.height * 0.45
+        drawGraphGrid(centerX: graphCenterX, centerY: graphCenterY, width: graphWidth, height: graphHeight)
     }
 
     private func refreshWaypointList() {
@@ -317,6 +569,7 @@ class FlightPlanningScene: SKScene {
         let waypoint = Waypoint(altitude: altitude, speed: speed, engineMode: currentEngine)
         flightPlan.addWaypoint(waypoint)
         refreshWaypointList()
+        updateGraph()
     }
 
     private func startSimulation() {

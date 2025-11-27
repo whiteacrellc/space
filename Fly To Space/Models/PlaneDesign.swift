@@ -14,13 +14,13 @@ struct PlaneDesign: Codable {
     let position: Double    // -150 to 150 (relative to cone midpoint)
 
     // Optimal design parameters
-    static let optimalPitch: Double = 4.0
-    static let optimalYaw: Double = 78.0
-    static let optimalPosition: Double = 129.0
+    static let optimalPitch: Double = 3.0
+    static let optimalYaw: Double = 95.0
+    static let optimalPosition: Double = 243.0
 
     // Yaw neutral zone (no penalty/bonus)
-    static let yawNeutralMin: Double = 70.0
-    static let yawNeutralMax: Double = 95.0
+    static let yawNeutralMin: Double = 90.0
+    static let yawNeutralMax: Double = 100.0
 
     /// Default design (initial view settings)
     static let defaultDesign = PlaneDesign(pitchAngle: -3.0, yawAngle: 92.0, position: 0.0)

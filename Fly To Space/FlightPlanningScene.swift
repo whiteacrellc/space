@@ -60,16 +60,15 @@ class FlightPlanningScene: SKScene {
             addChild(label)
         }
 
-        // Waypoint editor section (right side)
-        let editorX = size.width * 0.7
-        let labelOffsetX = size.width * 0.1 // 10% left offset
-        let labelOffsetY = size.height * 0.1 // 10% down offset
+        // Waypoint editor section (right side) - 10 pixels from right edge
+        let inputBoxX = size.width - 150 - 50 // 10px from right, 50 is half the box width (100/2)
+        let startY = size.height - 40
 
         let editorTitle = SKLabelNode(text: "New Waypoint")
         editorTitle.fontName = "AvenirNext-Medium"
         editorTitle.fontSize = 20
         editorTitle.fontColor = .cyan
-        editorTitle.position = CGPoint(x: editorX, y: size.height - 100)
+        editorTitle.position = CGPoint(x: inputBoxX, y: startY)
         addChild(editorTitle)
 
         // Altitude input
@@ -77,12 +76,12 @@ class FlightPlanningScene: SKScene {
         altLabel.fontName = "AvenirNext-Regular"
         altLabel.fontSize = 16
         altLabel.fontColor = .white
-        altLabel.position = CGPoint(x: editorX - 80 - labelOffsetX, y: size.height - 140 - labelOffsetY)
-        altLabel.horizontalAlignmentMode = .left
+        altLabel.position = CGPoint(x: inputBoxX - 50, y: startY - 40)
+        altLabel.horizontalAlignmentMode = .right
         addChild(altLabel)
 
         altitudeInputBox = TextInputBox(
-            position: CGPoint(x: editorX + 100 - labelOffsetX + size.width * 0.05, y: size.height - 135 - labelOffsetY),
+            position: CGPoint(x: inputBoxX + 50, y: startY - 35),
             width: 100,
             height: 35,
             initialValue: "100",
@@ -97,12 +96,12 @@ class FlightPlanningScene: SKScene {
         speedLabel.fontName = "AvenirNext-Regular"
         speedLabel.fontSize = 16
         speedLabel.fontColor = .white
-        speedLabel.position = CGPoint(x: editorX - 80 - labelOffsetX, y: size.height - 190 - labelOffsetY)
-        speedLabel.horizontalAlignmentMode = .left
+        speedLabel.position = CGPoint(x: inputBoxX - 50, y: startY - 90)
+        speedLabel.horizontalAlignmentMode = .right
         addChild(speedLabel)
 
         speedInputBox = TextInputBox(
-            position: CGPoint(x: editorX + 100 - labelOffsetX + size.width * 0.05, y: size.height - 185 - labelOffsetY),
+            position: CGPoint(x: inputBoxX + 50, y: startY - 85),
             width: 100,
             height: 35,
             initialValue: "10.0",
@@ -117,31 +116,32 @@ class FlightPlanningScene: SKScene {
         engineTitleLabel.fontName = "AvenirNext-Regular"
         engineTitleLabel.fontSize = 16
         engineTitleLabel.fontColor = .white
-        engineTitleLabel.position = CGPoint(x: editorX - 80 - labelOffsetX, y: size.height - 240 - labelOffsetY)
-        engineTitleLabel.horizontalAlignmentMode = .left
+        engineTitleLabel.position = CGPoint(x: inputBoxX - 50, y: startY - 140)
+        engineTitleLabel.horizontalAlignmentMode = .right
         addChild(engineTitleLabel)
 
-        engineLabel = createLabel(text: "Auto", position: CGPoint(x: editorX + 60 - labelOffsetX, y: size.height - 240 - labelOffsetY))
+        engineLabel = createLabel(text: "Auto", position: CGPoint(x: inputBoxX, y: startY - 140))
         if let label = engineLabel {
             addChild(label)
         }
 
-        let engineButton = createSmallButton(text: "Change", position: CGPoint(x: editorX + 130 - labelOffsetX, y: size.height - 240 - labelOffsetY), name: "change_engine")
+        let engineButton = createSmallButton(text: "Change", position: CGPoint(x: inputBoxX + 80, y: startY - 140), name: "change_engine")
         addChild(engineButton)
 
         // Add waypoint button
-        addButton = createButton(text: "Add Waypoint", position: CGPoint(x: editorX, y: size.height - 340), name: "add_waypoint")
+        addButton = createButton(text: "Add Waypoint", position: CGPoint(x: inputBoxX, y: startY - 200), name: "add_waypoint")
         if let button = addButton {
             addChild(button)
         }
 
-        // Bottom buttons
-        simulateButton = createButton(text: "Start Simulation", position: CGPoint(x: size.width * 0.35, y: 60), name: "simulate")
+        // Start simulation button (under add waypoint)
+        simulateButton = createButton(text: "Start Simulation", position: CGPoint(x: inputBoxX, y: startY - 260), name: "simulate")
         if let button = simulateButton {
             addChild(button)
         }
 
-        backButton = createSmallButton(text: "Back to Menu", position: CGPoint(x: 100, y: 30), name: "back")
+        // Back button (under start simulation)
+        backButton = createButton(text: "Back to Menu", position: CGPoint(x: inputBoxX, y: startY - 320), name: "back")
         if let button = backButton {
             addChild(button)
         }
@@ -154,18 +154,18 @@ class FlightPlanningScene: SKScene {
             addChild(graph)
         }
 
-        // Graph dimensions - centered on screen
+        // Graph dimensions - Y-axis 10 pixels from left edge
+        let yAxisX: CGFloat = 10
         let graphWidth = size.width * 0.5
         let graphHeight = size.height * 0.6
-        let graphCenterX = size.width * 0.35
         let graphCenterY = size.height * 0.45
 
         // Draw axes
-        // Y-axis (vertical, in the middle)
+        // Y-axis (vertical, 10px from left)
         let yAxis = SKShapeNode()
         let yAxisPath = CGMutablePath()
-        yAxisPath.move(to: CGPoint(x: graphCenterX, y: graphCenterY - graphHeight / 2))
-        yAxisPath.addLine(to: CGPoint(x: graphCenterX, y: graphCenterY + graphHeight / 2))
+        yAxisPath.move(to: CGPoint(x: yAxisX, y: graphCenterY - graphHeight / 2))
+        yAxisPath.addLine(to: CGPoint(x: yAxisX, y: graphCenterY + graphHeight / 2))
         yAxis.path = yAxisPath
         yAxis.strokeColor = .white
         yAxis.lineWidth = 2
@@ -174,33 +174,33 @@ class FlightPlanningScene: SKScene {
         // X-axis (horizontal, along the bottom)
         let xAxis = SKShapeNode()
         let xAxisPath = CGMutablePath()
-        xAxisPath.move(to: CGPoint(x: graphCenterX, y: graphCenterY - graphHeight / 2))
-        xAxisPath.addLine(to: CGPoint(x: graphCenterX + graphWidth / 2, y: graphCenterY - graphHeight / 2))
+        xAxisPath.move(to: CGPoint(x: yAxisX, y: graphCenterY - graphHeight / 2))
+        xAxisPath.addLine(to: CGPoint(x: yAxisX + graphWidth, y: graphCenterY - graphHeight / 2))
         xAxis.path = xAxisPath
         xAxis.strokeColor = .white
         xAxis.lineWidth = 2
         graphNode?.addChild(xAxis)
 
         // Add grid lines and labels
-        drawGraphGrid(centerX: graphCenterX, centerY: graphCenterY, width: graphWidth, height: graphHeight)
+        drawGraphGrid(yAxisX: yAxisX, centerY: graphCenterY, width: graphWidth, height: graphHeight)
 
         // Add axis titles
         let xTitle = SKLabelNode(text: "Time (minutes)")
         xTitle.fontName = "AvenirNext-Medium"
         xTitle.fontSize = 14
         xTitle.fontColor = .white
-        xTitle.position = CGPoint(x: graphCenterX + graphWidth / 4, y: graphCenterY - graphHeight / 2 - 40)
+        xTitle.position = CGPoint(x: yAxisX + graphWidth / 2, y: graphCenterY - graphHeight / 2 - 40)
         graphNode?.addChild(xTitle)
 
         let yTitle = SKLabelNode(text: "Altitude (km)")
         yTitle.fontName = "AvenirNext-Medium"
         yTitle.fontSize = 14
         yTitle.fontColor = .white
-        yTitle.position = CGPoint(x: graphCenterX - 60, y: graphCenterY + graphHeight / 2 + 10)
+        yTitle.position = CGPoint(x: yAxisX + 50, y: graphCenterY + graphHeight / 2 + 10)
         graphNode?.addChild(yTitle)
     }
 
-    private func drawGraphGrid(centerX: CGFloat, centerY: CGFloat, width: CGFloat, height: CGFloat) {
+    private func drawGraphGrid(yAxisX: CGFloat, centerY: CGFloat, width: CGFloat, height: CGFloat) {
         // Clear old labels
         for label in xAxisLabels {
             label.removeFromParent()
@@ -215,7 +215,7 @@ class FlightPlanningScene: SKScene {
         let numXDivisions = 6
         for i in 0...numXDivisions {
             let fraction = CGFloat(i) / CGFloat(numXDivisions)
-            let xPos = centerX + (width / 2) * fraction
+            let xPos = yAxisX + width * fraction
             let yPos = centerY - height / 2
 
             // Grid line
@@ -245,7 +245,7 @@ class FlightPlanningScene: SKScene {
         let numYDivisions = 5
         for i in 0...numYDivisions {
             let fraction = CGFloat(i) / CGFloat(numYDivisions)
-            let xPos = centerX
+            let xPos = yAxisX
             let yPos = centerY - height / 2 + height * fraction
 
             // Grid line
@@ -253,7 +253,7 @@ class FlightPlanningScene: SKScene {
                 let gridLine = SKShapeNode()
                 let gridPath = CGMutablePath()
                 gridPath.move(to: CGPoint(x: xPos, y: yPos))
-                gridPath.addLine(to: CGPoint(x: centerX + width / 2, y: yPos))
+                gridPath.addLine(to: CGPoint(x: yAxisX + width, y: yPos))
                 gridLine.path = gridPath
                 gridLine.strokeColor = UIColor(white: 0.3, alpha: 0.5)
                 gridLine.lineWidth = 1
@@ -266,8 +266,8 @@ class FlightPlanningScene: SKScene {
             label.fontName = "AvenirNext-Regular"
             label.fontSize = 12
             label.fontColor = .gray
-            label.position = CGPoint(x: xPos - 30, y: yPos - 5)
-            label.horizontalAlignmentMode = .right
+            label.position = CGPoint(x: xPos + 25, y: yPos - 5)
+            label.horizontalAlignmentMode = .left
             graphNode?.addChild(label)
             yAxisLabels.append(label)
         }
@@ -300,8 +300,9 @@ class FlightPlanningScene: SKScene {
                 let verticalDistance = altitudeDiff
                 let horizontalDistance = sqrt(2.0) * verticalDistance // Rough estimate
 
-                // Calculate time based on speed at the new endpoint
-                let speedFeetPerSecond = waypoint.speed * PhysicsConstants.speedOfSoundSeaLevel * PhysicsConstants.metersToFeet
+                // Calculate time based on average speed between waypoints
+                let averageSpeed = (prevWaypoint.speed + waypoint.speed) / 2.0
+                let speedFeetPerSecond = averageSpeed * PhysicsConstants.speedOfSoundSeaLevel * PhysicsConstants.metersToFeet
                 let timeSeconds = horizontalDistance / speedFeetPerSecond
                 cumulativeTime += timeSeconds
             }
@@ -314,9 +315,9 @@ class FlightPlanningScene: SKScene {
         adaptGraphScale(timePoints: timePoints)
 
         // Draw points and lines
+        let yAxisX: CGFloat = 10
         let graphWidth = size.width * 0.5
         let graphHeight = size.height * 0.6
-        let graphCenterX = size.width * 0.35
         let graphCenterY = size.height * 0.45
 
         for i in 0..<timePoints.count {
@@ -326,7 +327,7 @@ class FlightPlanningScene: SKScene {
             let xFraction = CGFloat(point.time / maxTimeMinutes)
             let yFraction = CGFloat(point.altitude / maxAltitudeKm)
 
-            let screenX = graphCenterX + (graphWidth / 2) * xFraction
+            let screenX = yAxisX + graphWidth * xFraction
             let screenY = graphCenterY - graphHeight / 2 + graphHeight * yFraction
 
             // Draw circle at point
@@ -344,7 +345,7 @@ class FlightPlanningScene: SKScene {
                 let prevXFraction = CGFloat(prevPoint.time / maxTimeMinutes)
                 let prevYFraction = CGFloat(prevPoint.altitude / maxAltitudeKm)
 
-                let prevScreenX = graphCenterX + (graphWidth / 2) * prevXFraction
+                let prevScreenX = yAxisX + graphWidth * prevXFraction
                 let prevScreenY = graphCenterY - graphHeight / 2 + graphHeight * prevYFraction
 
                 let line = SKShapeNode()
@@ -379,11 +380,11 @@ class FlightPlanningScene: SKScene {
         maxAltitudeKm = max(20, maxAltitudeKm)
 
         // Redraw grid with new scale
+        let yAxisX: CGFloat = 10
         let graphWidth = size.width * 0.5
         let graphHeight = size.height * 0.6
-        let graphCenterX = size.width * 0.35
         let graphCenterY = size.height * 0.45
-        drawGraphGrid(centerX: graphCenterX, centerY: graphCenterY, width: graphWidth, height: graphHeight)
+        drawGraphGrid(yAxisX: yAxisX, centerY: graphCenterY, width: graphWidth, height: graphHeight)
     }
 
     private func refreshWaypointList() {
@@ -402,7 +403,7 @@ class FlightPlanningScene: SKScene {
         listTitle.fontName = "AvenirNext-Medium"
         listTitle.fontSize = 20
         listTitle.fontColor = .cyan
-        listTitle.position = CGPoint(x: listX, y: size.height - 100)
+        listTitle.position = CGPoint(x: listX, y: size.height - 50)
         listTitle.horizontalAlignmentMode = .left
         addChild(listTitle)
         waypointLabels.append(listTitle)
@@ -503,7 +504,57 @@ class FlightPlanningScene: SKScene {
         // Activate new input
         inputBox.setActive(true)
         activeInput = inputBox
+
+        #if os(iOS)
+        // Show alert dialog for input on iOS
+        showInputAlert(for: inputBox)
+        #endif
     }
+
+    #if os(iOS)
+    private func showInputAlert(for inputBox: TextInputBox) {
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        // Determine which input box this is
+        let isAltitude = (inputBox === altitudeInputBox)
+        let isSpeed = (inputBox === speedInputBox)
+
+        let title = isAltitude ? "Enter Altitude" : "Enter Speed"
+        let message = isAltitude ? "Altitude in thousands of feet" : "Speed in Mach number"
+
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+
+        alert.addTextField { textField in
+            textField.placeholder = isAltitude ? "e.g., 100" : "e.g., 10.0"
+            textField.text = inputBox.getValue()
+            textField.keyboardType = isAltitude ? .numberPad : .decimalPad
+        }
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.deactivateInput()
+        })
+
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            if let text = alert.textFields?.first?.text, !text.isEmpty {
+                inputBox.updateValue(text)
+
+                if isAltitude {
+                    if let value = Int(text) {
+                        self.currentAltitudeThousands = value
+                    }
+                } else if isSpeed {
+                    if let value = Double(text) {
+                        self.currentSpeed = value
+                    }
+                }
+            }
+            self.deactivateInput()
+        })
+
+        viewController.present(alert, animated: true)
+    }
+    #endif
 
     private func deactivateInput() {
         activeInput?.setActive(false)
@@ -592,136 +643,3 @@ class FlightPlanningScene: SKScene {
     }
 }
 
-// MARK: - TextInputBox Component
-
-enum InputType {
-    case integer
-    case float
-}
-
-class TextInputBox: SKNode {
-    private var background: SKShapeNode
-    private var textLabel: SKLabelNode
-    private var cursor: SKShapeNode?
-    private var currentValue: String
-    private let inputType: InputType
-    private var isActive: Bool = false
-    private let boxWidth: CGFloat
-    private let boxHeight: CGFloat
-
-    init(position: CGPoint, width: CGFloat, height: CGFloat, initialValue: String, inputType: InputType) {
-        self.boxWidth = width
-        self.boxHeight = height
-        self.currentValue = initialValue
-        self.inputType = inputType
-
-        // Create background box
-        background = SKShapeNode(rectOf: CGSize(width: width, height: height), cornerRadius: 5)
-        background.fillColor = UIColor(white: 0.15, alpha: 0.9)
-        background.strokeColor = .white
-        background.lineWidth = 2
-
-        // Create text label
-        textLabel = SKLabelNode(text: initialValue)
-        textLabel.fontName = "Courier"
-        textLabel.fontSize = 16
-        textLabel.fontColor = .white
-        textLabel.verticalAlignmentMode = .center
-        textLabel.horizontalAlignmentMode = .center
-
-        super.init()
-
-        self.position = position
-        addChild(background)
-        addChild(textLabel)
-    }
-
-    required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func setActive(_ active: Bool) {
-        isActive = active
-        background.strokeColor = active ? .cyan : .white
-        background.lineWidth = active ? 3 : 2
-
-        // Show/hide cursor
-        if active {
-            showCursor()
-        } else {
-            hideCursor()
-        }
-    }
-
-    private func showCursor() {
-        if cursor == nil {
-            cursor = SKShapeNode(rectOf: CGSize(width: 2, height: 20))
-            cursor?.fillColor = .cyan
-            cursor?.strokeColor = .clear
-            if let cursor = cursor {
-                addChild(cursor)
-            }
-
-            // Blinking animation
-            let fadeOut = SKAction.fadeAlpha(to: 0.2, duration: 0.5)
-            let fadeIn = SKAction.fadeAlpha(to: 1.0, duration: 0.5)
-            let blink = SKAction.sequence([fadeOut, fadeIn])
-            cursor?.run(SKAction.repeatForever(blink))
-        }
-        updateCursorPosition()
-    }
-
-    private func hideCursor() {
-        cursor?.removeFromParent()
-        cursor = nil
-    }
-
-    private func updateCursorPosition() {
-        // Position cursor after the text
-        let textWidth = textLabel.frame.width
-        cursor?.position = CGPoint(x: textWidth / 2 + 5, y: 0)
-    }
-
-    func addCharacter(_ char: Character) {
-        let charString = String(char)
-
-        // Validate input based on type
-        switch inputType {
-        case .integer:
-            if charString.rangeOfCharacter(from: CharacterSet.decimalDigits) != nil {
-                currentValue += charString
-            }
-        case .float:
-            if charString.rangeOfCharacter(from: CharacterSet(charactersIn: "0123456789.")) != nil {
-                // Only allow one decimal point
-                if charString == "." && currentValue.contains(".") {
-                    return
-                }
-                currentValue += charString
-            }
-        }
-
-        updateDisplay()
-    }
-
-    func deleteCharacter() {
-        if !currentValue.isEmpty {
-            currentValue.removeLast()
-            updateDisplay()
-        }
-    }
-
-    private func updateDisplay() {
-        textLabel.text = currentValue.isEmpty ? "0" : currentValue
-        updateCursorPosition()
-    }
-
-    func getValue() -> String {
-        return currentValue.isEmpty ? "0" : currentValue
-    }
-
-    override func contains(_ point: CGPoint) -> Bool {
-        let localPoint = convert(point, from: parent!)
-        return background.contains(localPoint)
-    }
-}

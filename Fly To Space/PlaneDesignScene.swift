@@ -10,7 +10,11 @@ import SpriteKit
 class PlaneDesignScene: SKScene {
     // Cone parameters (3D space)
     private let coneHeight: CGFloat = 300.0
-    private let coneRadius: CGFloat = 150.0  // radius at base
+    private var coneRadius: CGFloat = 150.0  // radius at base - calculated from Mach number
+
+    // Mach number input
+    private var machNumber: CGFloat = 2.5  // Default Mach number
+    private var machInputBox: TextInputBox?
 
     // Cutting plane parameters
     private var planeAngleX: CGFloat = -3.0  // rotation around X axis (pitch)
@@ -29,12 +33,31 @@ class PlaneDesignScene: SKScene {
     // Performance feedback labels
     private var dragFeedbackLabel: SKLabelNode?
     private var thermalFeedbackLabel: SKLabelNode?
+    private var machAngleLabel: SKLabelNode?
+    private var aircraftSpecsLabel: SKLabelNode?
+
+    // Active text input
+    private var activeInput: TextInputBox?
 
     override func didMove(to view: SKView) {
         backgroundColor = .black
+        updateConeFromMach() // Calculate initial cone radius
         setupUI()
         updateVisualization()
         updatePerformanceFeedback()
+    }
+
+    private func updateConeFromMach() {
+        // Calculate Mach cone angle: μ = arcsin(1/M)
+        // For M >= 1, the cone half-angle is arcsin(1/M)
+        if machNumber >= 1.0 {
+            let machAngle = asin(1.0 / machNumber) // radians
+            // Cone radius = height * tan(machAngle)
+            coneRadius = coneHeight * tan(machAngle)
+        } else {
+            // For subsonic (M < 1), no shock cone - use default
+            coneRadius = coneHeight * 0.5
+        }
     }
 
     private func setupUI() {
@@ -52,6 +75,41 @@ class PlaneDesignScene: SKScene {
         subtitleLabel.fontColor = .cyan
         subtitleLabel.position = CGPoint(x: size.width / 2, y: size.height - 85)
         addChild(subtitleLabel)
+
+        // Mach number input (top left)
+        let machInputX: CGFloat = 50
+        let machInputY: CGFloat = size.height - 50
+
+        let machLabel = SKLabelNode(text: "Mach:")
+        machLabel.fontName = "AvenirNext-Medium"
+        machLabel.fontSize = 16
+        machLabel.fontColor = .yellow
+        machLabel.position = CGPoint(x: machInputX, y: machInputY)
+        machLabel.horizontalAlignmentMode = .left
+        addChild(machLabel)
+
+        machInputBox = TextInputBox(
+            position: CGPoint(x: machInputX + 100, y: machInputY + 5),
+            width: 80,
+            height: 30,
+            initialValue: "2.5",
+            inputType: .float
+        )
+        if let inputBox = machInputBox {
+            addChild(inputBox)
+        }
+
+        // Mach angle display
+        let machAngle = asin(1.0 / machNumber) * 180.0 / .pi
+        machAngleLabel = SKLabelNode(text: "Cone Angle: \(String(format: "%.1f", machAngle))°")
+        machAngleLabel?.fontName = "AvenirNext-Regular"
+        machAngleLabel?.fontSize = 14
+        machAngleLabel?.fontColor = .gray
+        machAngleLabel?.position = CGPoint(x: machInputX, y: machInputY - 25)
+        machAngleLabel?.horizontalAlignmentMode = .left
+        if let label = machAngleLabel {
+            addChild(label)
+        }
 
         // Performance feedback (upper right)
         let feedbackX: CGFloat = size.width - 200
@@ -82,6 +140,17 @@ class PlaneDesignScene: SKScene {
         thermalFeedbackLabel?.position = CGPoint(x: feedbackX, y: feedbackY - 45)
         thermalFeedbackLabel?.horizontalAlignmentMode = .left
         if let label = thermalFeedbackLabel {
+            addChild(label)
+        }
+
+        // Aircraft specs display
+        aircraftSpecsLabel = SKLabelNode(text: "Aircraft: -")
+        aircraftSpecsLabel?.fontName = "AvenirNext-Regular"
+        aircraftSpecsLabel?.fontSize = 12
+        aircraftSpecsLabel?.fontColor = .cyan
+        aircraftSpecsLabel?.position = CGPoint(x: feedbackX, y: feedbackY - 70)
+        aircraftSpecsLabel?.horizontalAlignmentMode = .left
+        if let label = aircraftSpecsLabel {
             addChild(label)
         }
 
@@ -165,6 +234,10 @@ class PlaneDesignScene: SKScene {
         let backButton = createButton(text: "Back to Menu", position: CGPoint(x: 120, y: 40))
         backButton.name = "back"
         addChild(backButton)
+
+        let view3DButton = createButton(text: "View 3D Model", position: CGPoint(x: size.width / 2, y: 40))
+        view3DButton.name = "view3D"
+        addChild(view3DButton)
 
         let saveButton = createButton(text: "Save Design", position: CGPoint(x: size.width - 120, y: 40))
         saveButton.name = "save"
@@ -526,12 +599,23 @@ class PlaneDesignScene: SKScene {
         let location = touch.location(in: self)
         let touchedNodes = nodes(at: location)
 
+        // Check if tapping on Mach input box
+        if let machBox = machInputBox, machBox.contains(location) {
+            activateInput(machBox)
+            return
+        }
+
+        // Deactivate any active input
+        deactivateInput()
+
         for node in touchedNodes {
             if let name = node.name {
                 if name == "back" {
                     transitionToMenu()
                 } else if name == "save" {
                     saveDesign()
+                } else if name == "view3D" {
+                    show3DModel()
                 } else if name.hasPrefix("angleX") || name.hasPrefix("angleY") || name.hasPrefix("offsetZ") {
                     // Slider interaction handled by SliderControl
                 }
@@ -543,6 +627,104 @@ class PlaneDesignScene: SKScene {
         angleYSlider?.touchBegan(at: location, in: self)
         offsetZSlider?.touchBegan(at: location, in: self)
     }
+
+    private func activateInput(_ inputBox: TextInputBox) {
+        // Deactivate previous input
+        activeInput?.setActive(false)
+
+        // Activate new input
+        inputBox.setActive(true)
+        activeInput = inputBox
+
+        #if os(iOS)
+        // Show alert dialog for input on iOS
+        showMachInputAlert()
+        #endif
+    }
+
+    #if os(iOS)
+    private func showMachInputAlert() {
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        let alert = UIAlertController(title: "Enter Mach Number", message: nil, preferredStyle: .alert)
+
+        alert.addTextField { textField in
+            textField.placeholder = "e.g., 2.5"
+            textField.text = self.machInputBox?.getValue()
+            textField.keyboardType = .decimalPad
+        }
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.deactivateInput()
+        })
+
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            if let text = alert.textFields?.first?.text,
+               let newMach = Double(text), newMach > 0 {
+                self.machNumber = CGFloat(newMach)
+                self.machInputBox?.updateValue(text)
+                self.updateConeFromMach()
+                self.updateVisualization()
+                self.updatePerformanceFeedback()
+                self.updateMachAngleLabel()
+            }
+            self.deactivateInput()
+        })
+
+        viewController.present(alert, animated: true)
+    }
+    #endif
+
+    private func deactivateInput() {
+        activeInput?.setActive(false)
+
+        // Check if we need to update Mach number (for macOS keyboard input)
+        #if os(macOS)
+        if activeInput == machInputBox {
+            if let machText = machInputBox?.getValue(),
+               let newMach = Double(machText), newMach > 0 {
+                machNumber = CGFloat(newMach)
+                updateConeFromMach()
+                updateVisualization()
+                updatePerformanceFeedback()
+                updateMachAngleLabel()
+            }
+        }
+        #endif
+
+        activeInput = nil
+    }
+
+    private func updateMachAngleLabel() {
+        if machNumber >= 1.0 {
+            let machAngle = asin(1.0 / machNumber) * 180.0 / .pi
+            machAngleLabel?.text = "Cone Angle: \(String(format: "%.1f", machAngle))°"
+        } else {
+            machAngleLabel?.text = "Cone Angle: N/A (subsonic)"
+        }
+    }
+
+    #if os(macOS)
+    override func keyDown(with event: NSEvent) {
+        guard let activeInput = activeInput else { return }
+
+        if let characters = event.characters {
+            for char in characters {
+                if char == "\r" || char == "\n" {
+                    // Enter key - deactivate input
+                    deactivateInput()
+                } else if char == "\u{7f}" {
+                    // Delete/backspace
+                    activeInput.deleteCharacter()
+                } else {
+                    // Regular character
+                    activeInput.addCharacter(char)
+                }
+            }
+        }
+    }
+    #endif
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
@@ -672,6 +854,21 @@ class PlaneDesignScene: SKScene {
 
         thermalFeedbackLabel?.text = "Temp: \(Int(temperature))°C / \(Int(maxTemp))°C (\(Int(tempPercent))%)"
         thermalFeedbackLabel?.fontColor = tempColor
+
+        // Calculate aircraft configuration based on typical mission fuel requirements
+        let jetFuelKg = 40000.0      // Jet fuel for J58 engines (Mach 0-3.2)
+        let hydrogenFuelKg = 10000.0 // Slush hydrogen for ramjet/scramjet (Mach 3-8)
+        let methaneFuelKg = 5000.0   // Liquid methane for rocket (Mach 8+)
+        let requiredThrust = 500000.0 // 500 kN required thrust
+
+        let config = AircraftVolumeModel.generateAircraftConfiguration(
+            jetFuelKg: jetFuelKg,
+            hydrogenFuelKg: hydrogenFuelKg,
+            methaneFuelKg: methaneFuelKg,
+            requiredThrust: requiredThrust
+        )
+
+        aircraftSpecsLabel?.text = "\(config.engineCount)×J58, L=\(String(format: "%.0f", config.length))m, \(String(format: "%.0f", config.totalMass/1000))t"
     }
 
     private func getAtmosphericDensity(altitudeM: Double) -> Double {
@@ -694,6 +891,26 @@ class PlaneDesignScene: SKScene {
             let rho_tropo = rho0 * pow(T_tropo / T0, (-g0 / (L * R)) - 1.0)
             let P_ratio = exp(-g0 * (altitudeM - H_tropo) / (R * T_tropo))
             return rho_tropo * P_ratio
+        }
+    }
+
+    private func show3DModel() {
+        // Create plane design from current parameters
+        let design = PlaneDesign(
+            pitchAngle: planeAngleX,
+            yawAngle: planeAngleY,
+            position: planeOffsetZ
+        )
+
+        // Create and present the 3D view controller
+        let viewController = LiftingBody3DViewController(planeDesign: design, machNumber: Double(machNumber))
+        viewController.modalPresentationStyle = .fullScreen
+
+        // Get the view controller from the view
+        if let skView = view,
+           let window = skView.window,
+           let rootVC = window.rootViewController {
+            rootVC.present(viewController, animated: true)
         }
     }
 

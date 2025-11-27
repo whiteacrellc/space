@@ -20,12 +20,12 @@ struct PhysicsConstants {
     // Conversion factors
     static let feetToMeters = 0.3048
     static let metersToFeet = 3.28084
-    static let kgPerLiter = 0.8 // Approximate density of jet fuel
+    static let kgPerLiter = 0.08 // Fuel density: 80 kg/m³ = 0.08 kg/L
 
-    // Aircraft properties (can be customized later)
-    static let dryMass = 15000.0 // kg (empty aircraft mass)
+    // Aircraft properties (calculated based on fuel volume and design)
+    static let dryMass = 15000.0 // kg (baseline empty aircraft mass)
     static let dragCoefficient = 0.02
-    static let referenceArea = 50.0 // m² cross-sectional area
+    static let referenceArea = 50.0 // m² cross-sectional area (baseline)
 
     // Flight parameters
     static let orbitAltitude = 300000.0 // feet

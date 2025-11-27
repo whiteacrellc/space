@@ -9,40 +9,54 @@ import Foundation
 
 class JetEngine: PropulsionSystem {
     let name = "Jet"
-    let machRange = 0.0...3.0
-    let altitudeRange = 0.0...50000.0 // feet
+    let machRange = 0.0...3.2  // J58 engine operates up to Mach 3.2
+    let altitudeRange = 0.0...85000.0 // feet
+
+    // Number of J58 engines (calculated based on aircraft needs)
+    private var engineCount: Int = 2
+
+    init(engineCount: Int = 2) {
+        self.engineCount = engineCount
+    }
 
     func getThrust(altitude: Double, speed: Double) -> Double {
-        let baseThrust = 250000.0 // 250 kN baseline
-        let mach = speed // Assuming speed is in Mach number
-
-        // Atmospheric density factor (exponential decay)
-        // Jets need air to breathe
-        let densityFactor = exp(-altitude / 30000.0)
-
-        // Thrust decreases with Mach number above optimal range
-        // Jets are most efficient at subsonic speeds (below Mach 0.85)
-        let machFactor: Double
-        if mach < 0.85 {
-            machFactor = 1.0
-        } else {
-            // Performance degrades rapidly in transonic and supersonic
-            machFactor = max(0.3, 1.0 - (mach - 0.85) / 2.15)
-        }
-
-        return baseThrust * densityFactor * machFactor
+        let mach = speed
+        return AircraftVolumeModel.j58TotalThrust(
+            engineCount: engineCount,
+            altitude: altitude,
+            mach: mach
+        )
     }
 
     func getFuelConsumption(altitude: Double, speed: Double) -> Double {
-        let baseConsumption = 80.0 // liters/second
+        // Base consumption rate from J58 specs
+        let baseRate = AircraftVolumeModel.j58FuelConsumptionRate(engineCount: engineCount)
+
         let mach = speed
 
-        // Consumption increases with speed (especially supersonic)
-        let speedFactor = 1.0 + pow(mach / 3.0, 2) * 2.0
+        // Consumption increases with Mach number (afterburner usage)
+        let speedFactor: Double
+        if mach < 1.0 {
+            speedFactor = 1.0
+        } else if mach < 3.0 {
+            // Increased consumption in supersonic regime
+            speedFactor = 1.0 + (mach - 1.0) * 0.5
+        } else {
+            // Maximum consumption at high Mach
+            speedFactor = 2.0
+        }
 
-        // Thinner air at altitude means less fuel needed (but also less thrust)
-        let densityFactor = exp(-altitude / 40000.0)
+        // Altitude affects efficiency slightly
+        let altitudeFactor = 1.0 - (altitude / 100000.0) * 0.1
 
-        return baseConsumption * speedFactor * densityFactor
+        return baseRate * speedFactor * max(0.5, altitudeFactor)
+    }
+
+    func setEngineCount(_ count: Int) {
+        engineCount = max(1, count)
+    }
+
+    func getEngineCount() -> Int {
+        return engineCount
     }
 }

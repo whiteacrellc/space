@@ -175,11 +175,16 @@ class MenuScene: SKScene {
     }
     
     private func openPlaneDesign() {
-        // Open plane design screen (Legacy SpriteKit Scene)
-        let transition = SKTransition.fade(withDuration: 1.0)
-        let designScene = PlaneDesignScene(size: size)
-        designScene.scaleMode = .aspectFill
-        view?.presentScene(designScene, transition: transition)
+        // Open the TopViewDesignViewController
+        let designViewController = TopViewDesignViewController()
+        designViewController.modalPresentationStyle = .fullScreen
+
+        // Get the view controller from the view
+        if let skView = view,
+           let window = skView.window,
+           let rootVC = window.rootViewController {
+            rootVC.present(designViewController, animated: true)
+        }
     }
 
     private func resumeGame() {

@@ -5,78 +5,6 @@
 
 import UIKit
 
-class DraggableControlPoint: UIView {
-    var onMoved: ((CGPoint) -> Void)?
-    var isConstrainedToVertical: Bool = false
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .white
-        layer.cornerRadius = frame.width / 2
-        layer.borderWidth = 1
-        layer.borderColor = UIColor.black.cgColor
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
-        addGestureRecognizer(pan)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        let translation = gesture.translation(in: superview)
-        var newCenter = center
-        if isConstrainedToVertical {
-            newCenter.y += translation.y
-        } else {
-            newCenter.x += translation.x
-            newCenter.y += translation.y
-        }
-        center = newCenter
-        gesture.setTranslation(.zero, in: superview)
-        onMoved?(center)
-    }
-}
-
-class GridBackgroundView: UIView {
-    var spacing: CGFloat = 50
-
-    override func draw(_ rect: CGRect) {
-        super.draw(rect)
-        guard let context = UIGraphicsGetCurrentContext() else { return }
-
-        // Draw grid
-        context.setStrokeColor(UIColor.white.withAlphaComponent(0.1).cgColor)
-        context.setLineWidth(1)
-
-        // Vertical lines
-        var x: CGFloat = 0
-        while x <= rect.width {
-            context.move(to: CGPoint(x: x, y: 0))
-            context.addLine(to: CGPoint(x: x, y: rect.height))
-            x += spacing
-        }
-
-        // Horizontal lines
-        var y: CGFloat = 0
-        while y <= rect.height {
-            context.move(to: CGPoint(x: 0, y: y))
-            context.addLine(to: CGPoint(x: rect.width, y: y))
-            y += spacing
-        }
-
-        context.strokePath()
-
-        // Draw centerline
-        context.setStrokeColor(UIColor.red.withAlphaComponent(0.5).cgColor)
-        context.setLineDash(phase: 0, lengths: [5, 5])
-        let centerY = rect.height / 2
-        context.move(to: CGPoint(x: 0, y: centerY))
-        context.addLine(to: CGPoint(x: rect.width, y: centerY))
-        context.strokePath()
-    }
-}
-
 class ShapeView: UIView {
     var frontStartModel = CGPoint.zero  // Fixed position - same as top start
     var frontControlModel = CGPoint.zero
@@ -108,6 +36,33 @@ class ShapeView: UIView {
         let tc = modelToView(topControlModel)
         let te = modelToView(topEndModel)
 
+        // Draw control point guide lines (dashed lines showing bezier structure)
+        let guidePath = UIBezierPath()
+
+        // Front curve guides
+        guidePath.move(to: fs)
+        guidePath.addLine(to: fc)
+        guidePath.move(to: fe)
+        guidePath.addLine(to: fc)
+
+        // Exhaust curve guides
+        guidePath.move(to: ee)
+        guidePath.addLine(to: ec)
+        guidePath.move(to: ex)
+        guidePath.addLine(to: ec)
+
+        // Top curve guides
+        guidePath.move(to: ts)
+        guidePath.addLine(to: tc)
+        guidePath.move(to: te)
+        guidePath.addLine(to: tc)
+
+        UIColor.white.withAlphaComponent(0.3).setStroke()
+        guidePath.lineWidth = 1
+        guidePath.setLineDash([3, 3], count: 2, phase: 0)
+        guidePath.stroke()
+
+        // Draw main shape
         let path = UIBezierPath()
         path.move(to: fs)
         path.addQuadCurve(to: fe, controlPoint: fc)
@@ -155,6 +110,8 @@ class SSTODesignViewController: UIViewController {
 
     private let engineLengthSlider = UISlider()
     private let engineLengthLabel = UILabel()
+    private let maxHeightSlider = UISlider()
+    private let maxHeightLabel = UILabel()
 
     // Canvas dimensions
     private let canvasWidth: CGFloat = 800
@@ -239,10 +196,26 @@ class SSTODesignViewController: UIViewController {
         engineLengthSlider.addTarget(self, action: #selector(engineLengthChanged), for: .valueChanged)
         footerView.addSubview(engineLengthSlider)
 
+        // Max height label
+        maxHeightLabel.text = "Max Height"
+        maxHeightLabel.font = UIFont.systemFont(ofSize: 14)
+        maxHeightLabel.textColor = .white
+        footerView.addSubview(maxHeightLabel)
+
+        // Max height slider
+        maxHeightSlider.minimumValue = 50
+        maxHeightSlider.maximumValue = 150
+        maxHeightSlider.value = 120
+        maxHeightSlider.minimumTrackTintColor = .cyan
+        maxHeightSlider.addTarget(self, action: #selector(maxHeightChanged), for: .valueChanged)
+        footerView.addSubview(maxHeightSlider)
+
         // Layout
         footerView.translatesAutoresizingMaskIntoConstraints = false
         engineLengthLabel.translatesAutoresizingMaskIntoConstraints = false
         engineLengthSlider.translatesAutoresizingMaskIntoConstraints = false
+        maxHeightLabel.translatesAutoresizingMaskIntoConstraints = false
+        maxHeightSlider.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             footerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -250,12 +223,21 @@ class SSTODesignViewController: UIViewController {
             footerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             footerView.heightAnchor.constraint(equalToConstant: 60),
 
+            // Engine length controls on left half
             engineLengthLabel.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 20),
             engineLengthLabel.centerYAnchor.constraint(equalTo: footerView.centerYAnchor),
 
-            engineLengthSlider.leadingAnchor.constraint(equalTo: engineLengthLabel.trailingAnchor, constant: 20),
-            engineLengthSlider.trailingAnchor.constraint(equalTo: footerView.trailingAnchor, constant: -20),
-            engineLengthSlider.centerYAnchor.constraint(equalTo: footerView.centerYAnchor)
+            engineLengthSlider.leadingAnchor.constraint(equalTo: engineLengthLabel.trailingAnchor, constant: 10),
+            engineLengthSlider.trailingAnchor.constraint(equalTo: footerView.centerXAnchor, constant: -20),
+            engineLengthSlider.centerYAnchor.constraint(equalTo: footerView.centerYAnchor),
+
+            // Max height controls on right half
+            maxHeightLabel.leadingAnchor.constraint(equalTo: footerView.centerXAnchor, constant: 20),
+            maxHeightLabel.centerYAnchor.constraint(equalTo: footerView.centerYAnchor),
+
+            maxHeightSlider.leadingAnchor.constraint(equalTo: maxHeightLabel.trailingAnchor, constant: 10),
+            maxHeightSlider.trailingAnchor.constraint(equalTo: footerView.trailingAnchor, constant: -20),
+            maxHeightSlider.centerYAnchor.constraint(equalTo: footerView.centerYAnchor)
         ])
     }
 
@@ -311,24 +293,26 @@ class SSTODesignViewController: UIViewController {
         shapeView.topStartModel = CGPoint(x: startX, y: startY)
         shapeView.frontStartModel = CGPoint(x: startX, y: startY)  // Same as top start
 
-        shapeView.frontControlModel = CGPoint(x: 150, y: startY - 80)
+        // Position control points outside the shape for better visibility
+        shapeView.frontControlModel = CGPoint(x: 150, y: startY - 120)  // Below shape
         shapeView.frontEndModel = CGPoint(x: 250, y: startY - 100)
 
         shapeView.engineLength = 240
-        shapeView.engineEndModel = CGPoint(x: 250 + shapeView.engineLength, y: startY - 90)
+        // Engine section is always parallel to x-axis (same Y as frontEndModel)
+        shapeView.engineEndModel = CGPoint(x: 250 + shapeView.engineLength, y: shapeView.frontEndModel.y)
 
-        shapeView.exhaustControlModel = CGPoint(x: 650, y: startY - 60)
+        shapeView.exhaustControlModel = CGPoint(x: 650, y: startY - 120)  // Below shape
         shapeView.exhaustEndModel = CGPoint(x: canvasWidth - 50, y: startY)
 
-        shapeView.topControlModel = CGPoint(x: 400, y: startY + 100)
+        shapeView.topControlModel = CGPoint(x: 400, y: startY + 120)  // Above shape
         shapeView.topEndModel = CGPoint(x: canvasWidth - 50, y: startY)
     }
 
     private func setupControlPoints() {
         let pointSize = CGSize(width: 14, height: 14)
 
-        // Front control point
-        frontControlView = createControlPoint(size: pointSize, constrained: false)
+        // Front control point (free movement)
+        frontControlView = createControlPoint(size: pointSize, verticalOnly: false, horizontalOnly: false)
         frontControlView.onMoved = { [weak self] newCenter in
             guard let self = self else { return }
             let modelPoint = self.canvasToModel(newCenter)
@@ -336,28 +320,51 @@ class SSTODesignViewController: UIViewController {
             self.shapeView.setNeedsDisplay()
         }
 
-        // Front end point (vertically constrained)
-        frontEndView = createControlPoint(size: pointSize, constrained: true)
+        // Front end point (horizontal movement only - moves engine start position)
+        frontEndView = createControlPoint(size: pointSize, verticalOnly: false, horizontalOnly: true)
         frontEndView.onMoved = { [weak self] newCenter in
             guard let self = self else { return }
             let modelPoint = self.canvasToModel(newCenter)
-            self.shapeView.frontEndModel.y = modelPoint.y
-            self.frontEndView.center.x = self.modelToCanvas(self.shapeView.frontEndModel).x
+            self.shapeView.frontEndModel.x = modelPoint.x
+
+            // Update engine end position to maintain length
+            self.shapeView.engineEndModel.x = self.shapeView.frontEndModel.x + self.shapeView.engineLength
+
+            // Keep engine parallel (same Y as front end)
+            self.shapeView.engineEndModel.y = self.shapeView.frontEndModel.y
+
+            self.frontEndView.center.y = self.modelToCanvas(self.shapeView.frontEndModel).y
+            self.updateControlPointPositions()
             self.shapeView.setNeedsDisplay()
         }
 
-        // Engine end point (vertically constrained)
-        engineEndView = createControlPoint(size: pointSize, constrained: true)
+        // Engine end point (vertical movement only - adjusts engine height, stays parallel)
+        engineEndView = createControlPoint(size: pointSize, verticalOnly: true, horizontalOnly: false)
         engineEndView.onMoved = { [weak self] newCenter in
             guard let self = self else { return }
             let modelPoint = self.canvasToModel(newCenter)
+
+            // Store the current max height before changing engine line
+            let oldEngineLineY = self.shapeView.frontEndModel.y
+            let maxHeight = self.shapeView.topControlModel.y - oldEngineLineY
+
+            // Update both front end and engine end to same Y (keep parallel)
+            self.shapeView.frontEndModel.y = modelPoint.y
             self.shapeView.engineEndModel.y = modelPoint.y
+
+            // Maintain the same max height relative to the new engine line position
+            self.shapeView.topControlModel.y = self.shapeView.frontEndModel.y + maxHeight
+
+            // Keep X position of engine end
             self.engineEndView.center.x = self.modelToCanvas(self.shapeView.engineEndModel).x
+            self.frontEndView.center.y = self.modelToCanvas(self.shapeView.frontEndModel).y
+
+            self.updateControlPointPositions()
             self.shapeView.setNeedsDisplay()
         }
 
-        // Exhaust control point
-        exhaustControlView = createControlPoint(size: pointSize, constrained: false)
+        // Exhaust control point (free movement)
+        exhaustControlView = createControlPoint(size: pointSize, verticalOnly: false, horizontalOnly: false)
         exhaustControlView.onMoved = { [weak self] newCenter in
             guard let self = self else { return }
             let modelPoint = self.canvasToModel(newCenter)
@@ -365,17 +372,23 @@ class SSTODesignViewController: UIViewController {
             self.shapeView.setNeedsDisplay()
         }
 
-        // Top control point
-        topControlView = createControlPoint(size: pointSize, constrained: false)
+        // Top control point (free movement)
+        topControlView = createControlPoint(size: pointSize, verticalOnly: false, horizontalOnly: false)
         topControlView.onMoved = { [weak self] newCenter in
             guard let self = self else { return }
             let modelPoint = self.canvasToModel(newCenter)
             self.shapeView.topControlModel = modelPoint
+
+            // Update the max height slider to match the new position
+            let engineLineY = self.shapeView.frontEndModel.y
+            let currentHeight = self.shapeView.topControlModel.y - engineLineY
+            self.maxHeightSlider.value = Float(currentHeight)
+
             self.shapeView.setNeedsDisplay()
         }
 
         // Top end point (vertically constrained)
-        topEndView = createControlPoint(size: pointSize, constrained: true)
+        topEndView = createControlPoint(size: pointSize, verticalOnly: true, horizontalOnly: false)
         topEndView.onMoved = { [weak self] newCenter in
             guard let self = self else { return }
             let modelPoint = self.canvasToModel(newCenter)
@@ -386,9 +399,10 @@ class SSTODesignViewController: UIViewController {
         }
     }
 
-    private func createControlPoint(size: CGSize, constrained: Bool) -> DraggableControlPoint {
+    private func createControlPoint(size: CGSize, verticalOnly: Bool, horizontalOnly: Bool) -> DraggableControlPoint {
         let point = DraggableControlPoint(frame: CGRect(origin: .zero, size: size))
-        point.isConstrainedToVertical = constrained
+        point.isConstrainedToVertical = verticalOnly
+        point.isConstrainedToHorizontal = horizontalOnly
         view.addSubview(point)
         return point
     }
@@ -424,11 +438,26 @@ class SSTODesignViewController: UIViewController {
         let maxX = canvasWidth - 200  // Leave space for exhaust
         if newEngineEndX < maxX {
             shapeView.engineEndModel.x = newEngineEndX
+            // Keep engine parallel (same Y as front end)
+            shapeView.engineEndModel.y = shapeView.frontEndModel.y
             updateControlPointPositions()
             shapeView.setNeedsDisplay()
         } else {
             slider.value = Float(shapeView.engineEndModel.x - shapeView.frontEndModel.x)
         }
+    }
+
+    @objc private func maxHeightChanged(_ slider: UISlider) {
+        let maxHeight = CGFloat(slider.value)
+
+        // Calculate the engine line Y position (same as frontEndModel.y or engineEndModel.y)
+        let engineLineY = shapeView.frontEndModel.y
+
+        // Update top control point Y to be maxHeight above the engine line
+        shapeView.topControlModel.y = engineLineY + maxHeight
+
+        updateControlPointPositions()
+        shapeView.setNeedsDisplay()
     }
 
     @objc private func doneButtonTapped() {

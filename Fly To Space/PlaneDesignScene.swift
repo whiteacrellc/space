@@ -894,18 +894,15 @@ class PlaneDesignScene: SKScene {
     }
 
     private func openCrossSectionDesigner() {
-        // Open the SwiftUI LiftingBodyDesigner
-        let designerView = LiftingBodyDesigner()
-
-        // Wrap it in a UIHostingController
-        let hostingController = UIHostingController(rootView: designerView)
-        hostingController.modalPresentationStyle = .fullScreen
+        // Open the SSTODesignViewController
+        let designViewController = SSTODesignViewController()
+        designViewController.modalPresentationStyle = .fullScreen
 
         // Get the view controller from the view
         if let skView = view,
            let window = skView.window,
            let rootVC = window.rootViewController {
-            rootVC.present(hostingController, animated: true)
+            rootVC.present(designViewController, animated: true)
         }
     }
 

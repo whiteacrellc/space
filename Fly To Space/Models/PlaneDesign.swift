@@ -15,8 +15,8 @@ struct PlaneDesign: Codable {
 
     // Optimal design parameters
     static let optimalTilt: Double = 0.0  // Fixed for bilateral symmetry
-    static let optimalSweep: Double = 95.0
-    static let optimalPosition: Double = 243.0
+    static let optimalSweep: Double = 80.0
+    static let optimalPosition: Double = 174.0
 
     // Sweep neutral zone (no penalty/bonus)
     static let sweepNeutralMin: Double = 90.0
@@ -31,7 +31,7 @@ struct PlaneDesign: Codable {
     /// Calculate drag coefficient multiplier (1.0 = baseline)
     /// Lower is better (less drag)
     func dragMultiplier() -> Double {
-        var multiplier = 1.0
+        var multiplier = 0.3
 
         // Position effect: too small increases drag (plane too thick for fuel capacity)
         // Optimal around 129, penalty increases as we move toward apex

@@ -45,6 +45,6 @@ struct PhysicsConstants {
 
     /// Atmospheric density at altitude (meters)
     static func atmosphericDensity(at altitudeMeters: Double) -> Double {
-        return seaLevelDensity * exp(-altitudeMeters / scaleHeight)
+        return AtmosphereModel.atmosphericDensity(at: altitudeMeters)
     }
 }

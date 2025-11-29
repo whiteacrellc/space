@@ -6,6 +6,7 @@
 //
 
 import SpriteKit
+import SwiftUI
 
 class PlaneDesignScene: SKScene {
     // Cone parameters (3D space)
@@ -17,12 +18,12 @@ class PlaneDesignScene: SKScene {
     private var machInputBox: TextInputBox?
 
     // Cutting plane parameters
-    private var planeAngleX: CGFloat = -3.0  // rotation around X axis (pitch)
+    // For bilateral symmetry: planeAngleX is fixed at 0 (vertical plane)
+    private let planeAngleX: CGFloat = 0.0  // rotation around X axis (pitch) - FIXED for symmetry
     private var planeAngleY: CGFloat = 92.0 // rotation around Y axis (yaw) - 90° gives vertical plane
     private var planeOffsetZ: CGFloat = 0.0 // offset along X axis (along cone)
 
     // UI Elements
-    private var angleXSlider: SliderControl?
     private var angleYSlider: SliderControl?
     private var offsetZSlider: SliderControl?
 
@@ -69,7 +70,7 @@ class PlaneDesignScene: SKScene {
         titleLabel.position = CGPoint(x: size.width / 2, y: size.height - 50)
         addChild(titleLabel)
 
-        let subtitleLabel = SKLabelNode(text: "Adjust cutting plane to define leading edge shape")
+        let subtitleLabel = SKLabelNode(text: "Adjust sweep and position for bilaterally symmetric design")
         subtitleLabel.fontName = "AvenirNext-Medium"
         subtitleLabel.fontSize = 18
         subtitleLabel.fontColor = .cyan
@@ -158,38 +159,17 @@ class PlaneDesignScene: SKScene {
         let controlX: CGFloat = size.width - 280
         let startY: CGFloat = size.height - 150
 
-        // Angle X slider (pitch)
-        let angleXLabel = SKLabelNode(text: "Pitch Angle: -3°")
-        angleXLabel.fontName = "AvenirNext-Regular"
-        angleXLabel.fontSize = 16
-        angleXLabel.fontColor = .white
-        angleXLabel.position = CGPoint(x: controlX, y: startY)
-        angleXLabel.name = "angleXLabel"
-        addChild(angleXLabel)
-
-        angleXSlider = SliderControl(
-            position: CGPoint(x: controlX, y: startY - 30),
-            width: 200,
-            minValue: -45,
-            maxValue: 45,
-            initialValue: -3,
-            name: "angleX"
-        )
-        if let slider = angleXSlider {
-            addChild(slider)
-        }
-
-        // Angle Y slider (yaw)
-        let angleYLabel = SKLabelNode(text: "Yaw Angle: 92°")
+        // Sweep Angle slider (yaw)
+        let angleYLabel = SKLabelNode(text: "Sweep Angle: 92°")
         angleYLabel.fontName = "AvenirNext-Regular"
         angleYLabel.fontSize = 16
         angleYLabel.fontColor = .white
-        angleYLabel.position = CGPoint(x: controlX, y: startY - 90)
+        angleYLabel.position = CGPoint(x: controlX, y: startY)
         angleYLabel.name = "angleYLabel"
         addChild(angleYLabel)
 
         angleYSlider = SliderControl(
-            position: CGPoint(x: controlX, y: startY - 120),
+            position: CGPoint(x: controlX, y: startY - 30),
             width: 200,
             minValue: 45,
             maxValue: 135,
@@ -205,12 +185,12 @@ class PlaneDesignScene: SKScene {
         offsetZLabel.fontName = "AvenirNext-Regular"
         offsetZLabel.fontSize = 16
         offsetZLabel.fontColor = .white
-        offsetZLabel.position = CGPoint(x: controlX, y: startY - 180)
+        offsetZLabel.position = CGPoint(x: controlX, y: startY - 90)
         offsetZLabel.name = "offsetZLabel"
         addChild(offsetZLabel)
 
         offsetZSlider = SliderControl(
-            position: CGPoint(x: controlX, y: startY - 210),
+            position: CGPoint(x: controlX, y: startY - 120),
             width: 200,
             minValue: -150,
             maxValue: 150,
@@ -226,20 +206,24 @@ class PlaneDesignScene: SKScene {
         shapeLabel.fontName = "AvenirNext-Medium"
         shapeLabel.fontSize = 18
         shapeLabel.fontColor = .green
-        shapeLabel.position = CGPoint(x: controlX, y: startY - 280)
+        shapeLabel.position = CGPoint(x: controlX, y: startY - 190)
         shapeLabel.name = "shapeLabel"
         addChild(shapeLabel)
 
         // Buttons
-        let backButton = createButton(text: "Back to Menu", position: CGPoint(x: 120, y: 40))
+        let backButton = createButton(text: "Back to Menu", position: CGPoint(x: 120, y: 100))
         backButton.name = "back"
         addChild(backButton)
 
-        let view3DButton = createButton(text: "View 3D Model", position: CGPoint(x: size.width / 2, y: 40))
+        let crossSectionButton = createButton(text: "Design Cross Section", position: CGPoint(x: size.width / 2, y: 100))
+        crossSectionButton.name = "designCrossSection"
+        addChild(crossSectionButton)
+
+        let view3DButton = createButton(text: "View 3D Model", position: CGPoint(x: size.width - 120, y: 100))
         view3DButton.name = "view3D"
         addChild(view3DButton)
 
-        let saveButton = createButton(text: "Save Design", position: CGPoint(x: size.width - 120, y: 40))
+        let saveButton = createButton(text: "Save Design", position: CGPoint(x: size.width / 2, y: 40))
         saveButton.name = "save"
         addChild(saveButton)
     }
@@ -295,11 +279,8 @@ class PlaneDesignScene: SKScene {
         }
 
         // Update labels
-        if let label = childNode(withName: "angleXLabel") as? SKLabelNode {
-            label.text = "Pitch Angle: \(Int(planeAngleX))°"
-        }
         if let label = childNode(withName: "angleYLabel") as? SKLabelNode {
-            label.text = "Yaw Angle: \(Int(planeAngleY))°"
+            label.text = "Sweep Angle: \(Int(planeAngleY))°"
         }
         if let label = childNode(withName: "offsetZLabel") as? SKLabelNode {
             let position = planeOffsetZ + 150  // Relative to apex
@@ -616,14 +597,15 @@ class PlaneDesignScene: SKScene {
                     saveDesign()
                 } else if name == "view3D" {
                     show3DModel()
-                } else if name.hasPrefix("angleX") || name.hasPrefix("angleY") || name.hasPrefix("offsetZ") {
+                } else if name == "designCrossSection" {
+                    openCrossSectionDesigner()
+                } else if name.hasPrefix("angleY") || name.hasPrefix("offsetZ") {
                     // Slider interaction handled by SliderControl
                 }
             }
         }
 
         // Forward to sliders
-        angleXSlider?.touchBegan(at: location, in: self)
         angleYSlider?.touchBegan(at: location, in: self)
         offsetZSlider?.touchBegan(at: location, in: self)
     }
@@ -732,11 +714,6 @@ class PlaneDesignScene: SKScene {
 
         var needsUpdate = false
 
-        if let newValue = angleXSlider?.touchMoved(to: location, in: self) {
-            planeAngleX = newValue
-            needsUpdate = true
-        }
-
         if let newValue = angleYSlider?.touchMoved(to: location, in: self) {
             planeAngleY = newValue
             needsUpdate = true
@@ -754,7 +731,6 @@ class PlaneDesignScene: SKScene {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        angleXSlider?.touchEnded()
         angleYSlider?.touchEnded()
         offsetZSlider?.touchEnded()
     }
@@ -762,9 +738,9 @@ class PlaneDesignScene: SKScene {
     private func saveDesign() {
         // Create plane design from current parameters
         let design = PlaneDesign(
-            pitchAngle: planeAngleX,
-            yawAngle: planeAngleY,
-            position: planeOffsetZ
+            tiltAngle: Double(planeAngleX),
+            sweepAngle: Double(planeAngleY),
+            position: Double(planeOffsetZ)
         )
 
         // Save to game manager
@@ -781,14 +757,14 @@ class PlaneDesignScene: SKScene {
         let scoreLabel = SKLabelNode(text: "Score: \(design.score())/100")
         scoreLabel.fontName = "AvenirNext-Medium"
         scoreLabel.fontSize = 18
-        scoreLabel.fontColor = .white
+        scoreLabel.fontColor = UIColor.white
         scoreLabel.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(scoreLabel)
 
         let tradeoffLabel = SKLabelNode(text: design.summary())
         tradeoffLabel.fontName = "AvenirNext-Regular"
         tradeoffLabel.fontSize = 16
-        tradeoffLabel.fontColor = .cyan
+        tradeoffLabel.fontColor = UIColor.cyan
         tradeoffLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 30)
         addChild(tradeoffLabel)
 
@@ -807,9 +783,9 @@ class PlaneDesignScene: SKScene {
     private func updatePerformanceFeedback() {
         // Create design from current parameters
         let design = PlaneDesign(
-            pitchAngle: planeAngleX,
-            yawAngle: planeAngleY,
-            position: planeOffsetZ
+            tiltAngle: Double(planeAngleX),
+            sweepAngle: Double(planeAngleY),
+            position: Double(planeOffsetZ)
         )
 
         // Test conditions: 70,000 ft and Mach 2.5
@@ -897,13 +873,16 @@ class PlaneDesignScene: SKScene {
     private func show3DModel() {
         // Create plane design from current parameters
         let design = PlaneDesign(
-            pitchAngle: planeAngleX,
-            yawAngle: planeAngleY,
-            position: planeOffsetZ
+            tiltAngle: Double(planeAngleX),
+            sweepAngle: Double(planeAngleY),
+            position: Double(planeOffsetZ)
         )
 
+        // Save design to GameManager first
+        GameManager.shared.setPlaneDesign(design)
+
         // Create and present the 3D view controller
-        let viewController = LiftingBody3DViewController(planeDesign: design, machNumber: Double(machNumber))
+        let viewController = LiftingBody3DViewController()
         viewController.modalPresentationStyle = .fullScreen
 
         // Get the view controller from the view
@@ -911,6 +890,22 @@ class PlaneDesignScene: SKScene {
            let window = skView.window,
            let rootVC = window.rootViewController {
             rootVC.present(viewController, animated: true)
+        }
+    }
+
+    private func openCrossSectionDesigner() {
+        // Open the SwiftUI LiftingBodyDesigner
+        let designerView = LiftingBodyDesigner()
+
+        // Wrap it in a UIHostingController
+        let hostingController = UIHostingController(rootView: designerView)
+        hostingController.modalPresentationStyle = .fullScreen
+
+        // Get the view controller from the view
+        if let skView = view,
+           let window = skView.window,
+           let rootVC = window.rootViewController {
+            rootVC.present(hostingController, animated: true)
         }
     }
 

@@ -9,24 +9,24 @@ import Foundation
 
 /// Aircraft design parameters defining leading edge shape
 struct PlaneDesign: Codable {
-    let pitchAngle: Double  // degrees (-45 to 45)
-    let yawAngle: Double    // degrees (45 to 135)
+    let tiltAngle: Double   // degrees (-45 to 45) - FIXED at 0 for bilateral symmetry
+    let sweepAngle: Double  // degrees (45 to 135) - defines leading edge shape
     let position: Double    // -150 to 150 (relative to cone midpoint)
 
     // Optimal design parameters
-    static let optimalPitch: Double = 3.0
-    static let optimalYaw: Double = 95.0
+    static let optimalTilt: Double = 0.0  // Fixed for bilateral symmetry
+    static let optimalSweep: Double = 95.0
     static let optimalPosition: Double = 243.0
 
-    // Yaw neutral zone (no penalty/bonus)
-    static let yawNeutralMin: Double = 90.0
-    static let yawNeutralMax: Double = 100.0
+    // Sweep neutral zone (no penalty/bonus)
+    static let sweepNeutralMin: Double = 90.0
+    static let sweepNeutralMax: Double = 100.0
 
-    /// Default design (initial view settings)
-    static let defaultDesign = PlaneDesign(pitchAngle: -3.0, yawAngle: 92.0, position: 0.0)
+    /// Default design (initial view settings) - bilaterally symmetric
+    static let defaultDesign = PlaneDesign(tiltAngle: 0.0, sweepAngle: 92.0, position: 0.0)
 
     /// Optimal design for best overall performance
-    static let optimalDesign = PlaneDesign(pitchAngle: optimalPitch, yawAngle: optimalYaw, position: optimalPosition)
+    static let optimalDesign = PlaneDesign(tiltAngle: optimalTilt, sweepAngle: optimalSweep, position: optimalPosition)
 
     /// Calculate drag coefficient multiplier (1.0 = baseline)
     /// Lower is better (less drag)
@@ -39,29 +39,28 @@ struct PlaneDesign: Codable {
         let positionPenalty = positionFromOptimal / 150.0 * 0.3  // Up to 30% penalty
         multiplier += positionPenalty
 
-        // Yaw angle effect: Outside 70-95 range increases drag
-        var yawPenalty = 0.0
-        if yawAngle < PlaneDesign.yawNeutralMin {
-            // Below 70: increasingly bad
-            let deviation = PlaneDesign.yawNeutralMin - yawAngle
-            yawPenalty = deviation / 25.0 * 0.4  // Up to 40% penalty at 45°
-        } else if yawAngle > PlaneDesign.yawNeutralMax {
-            // Above 95: increasingly bad
-            let deviation = yawAngle - PlaneDesign.yawNeutralMax
-            yawPenalty = deviation / 40.0 * 0.4  // Up to 40% penalty at 135°
+        // Sweep angle effect: Outside 90-100 range increases drag
+        var sweepPenalty = 0.0
+        if sweepAngle < PlaneDesign.sweepNeutralMin {
+            // Below 90: increasingly bad
+            let deviation = PlaneDesign.sweepNeutralMin - sweepAngle
+            sweepPenalty = deviation / 25.0 * 0.4  // Up to 40% penalty at 45°
+        } else if sweepAngle > PlaneDesign.sweepNeutralMax {
+            // Above 100: increasingly bad
+            let deviation = sweepAngle - PlaneDesign.sweepNeutralMax
+            sweepPenalty = deviation / 40.0 * 0.4  // Up to 40% penalty at 135°
         } else {
-            // Within neutral zone: lower yaw = better drag
-            // Linearly interpolate: 70° is best (0% bonus), 95° is worst (10% penalty)
-            let normalizedYaw = (yawAngle - PlaneDesign.yawNeutralMin) / (PlaneDesign.yawNeutralMax - PlaneDesign.yawNeutralMin)
-            yawPenalty = normalizedYaw * 0.1
+            // Within neutral zone: lower sweep = better drag
+            // Linearly interpolate: 90° is best (0% bonus), 100° is worst (10% penalty)
+            let normalizedSweep = (sweepAngle - PlaneDesign.sweepNeutralMin) / (PlaneDesign.sweepNeutralMax - PlaneDesign.sweepNeutralMin)
+            sweepPenalty = normalizedSweep * 0.1
         }
-        multiplier += yawPenalty
+        multiplier += sweepPenalty
 
-        // Pitch angle effect: sharper (more negative or positive) = lower drag
-        // Optimal is around 4°, but sharper angles reduce drag at cost of thermal issues
-        let pitchFromOptimal = abs(pitchAngle - PlaneDesign.optimalPitch)
-        let pitchPenalty = pitchFromOptimal / 45.0 * 0.15  // Up to 15% penalty
-        multiplier += pitchPenalty
+        // Tilt angle effect: should always be 0 for bilateral symmetry
+        // Any deviation from 0 adds penalty
+        let tiltPenalty = abs(tiltAngle) / 45.0 * 0.15  // Up to 15% penalty
+        multiplier += tiltPenalty
 
         return max(0.7, min(2.0, multiplier))  // Clamp between 70% and 200%
     }
@@ -74,25 +73,26 @@ struct PlaneDesign: Codable {
         // Sharper leading edge = heats up faster = lower thermal limit
         // Blunt nose = heats up slower = higher thermal limit
 
-        // Yaw angle effect: Higher yaw (closer to 90°) = sharper edge = more heating
-        // Within neutral zone (70-95): higher yaw increases heating
-        if yawAngle >= PlaneDesign.yawNeutralMin && yawAngle <= PlaneDesign.yawNeutralMax {
-            // Higher yaw = more heating (lower limit)
-            let normalizedYaw = (yawAngle - PlaneDesign.yawNeutralMin) / (PlaneDesign.yawNeutralMax - PlaneDesign.yawNeutralMin)
-            multiplier -= normalizedYaw * 0.15  // Up to 15% lower limit at 95°
-        } else if yawAngle < PlaneDesign.yawNeutralMin {
+        // Sweep angle effect: Higher sweep (closer to 90°) = sharper edge = more heating
+        // Within neutral zone (90-100): higher sweep increases heating
+        if sweepAngle >= PlaneDesign.sweepNeutralMin && sweepAngle <= PlaneDesign.sweepNeutralMax {
+            // Higher sweep = more heating (lower limit)
+            let normalizedSweep = (sweepAngle - PlaneDesign.sweepNeutralMin) / (PlaneDesign.sweepNeutralMax - PlaneDesign.sweepNeutralMin)
+            multiplier -= normalizedSweep * 0.15  // Up to 15% lower limit at 100°
+        } else if sweepAngle < PlaneDesign.sweepNeutralMin {
             // Very blunt nose = better thermal properties
-            let deviation = PlaneDesign.yawNeutralMin - yawAngle
+            let deviation = PlaneDesign.sweepNeutralMin - sweepAngle
             multiplier += deviation / 25.0 * 0.2  // Up to 20% bonus at 45°
         } else {
             // Very sharp nose = worse thermal properties
-            let deviation = yawAngle - PlaneDesign.yawNeutralMax
+            let deviation = sweepAngle - PlaneDesign.sweepNeutralMax
             multiplier -= deviation / 40.0 * 0.25  // Up to 25% penalty at 135°
         }
 
-        // Pitch angle effect: sharper pitch = more extreme temperatures
-        let pitchSharpness = abs(pitchAngle)
-        multiplier -= pitchSharpness / 45.0 * 0.1  // Up to 10% penalty for extreme pitch
+        // Tilt angle effect: should always be 0 for bilateral symmetry
+        // Any deviation from 0 affects thermal properties
+        let tiltSharpness = abs(tiltAngle)
+        multiplier -= tiltSharpness / 45.0 * 0.1  // Up to 10% penalty for tilt deviation
 
         // Position effect: doesn't significantly affect thermal properties
         // (thermal is mainly about leading edge shape, not overall size)

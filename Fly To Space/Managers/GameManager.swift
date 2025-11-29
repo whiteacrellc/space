@@ -6,6 +6,53 @@
 //
 
 import Foundation
+import CoreGraphics
+
+/// Stores the spline control points for cross-section design
+struct CrossSectionPoints: Codable {
+    var topPoints: [SerializablePoint]
+    var bottomPoints: [SerializablePoint]
+
+    static let defaultPoints = CrossSectionPoints(
+        topPoints: [
+            SerializablePoint(x: 100, y: 250, isFixedX: true),
+            SerializablePoint(x: 200, y: 190, isFixedX: false),
+            SerializablePoint(x: 400, y: 160, isFixedX: false),
+            SerializablePoint(x: 600, y: 200, isFixedX: false),
+            SerializablePoint(x: 700, y: 250, isFixedX: true)
+        ],
+        bottomPoints: [
+            SerializablePoint(x: 100, y: 250, isFixedX: true),
+            SerializablePoint(x: 200, y: 280, isFixedX: false),
+            SerializablePoint(x: 400, y: 290, isFixedX: false),
+            SerializablePoint(x: 600, y: 270, isFixedX: false),
+            SerializablePoint(x: 700, y: 250, isFixedX: true)
+        ]
+    )
+}
+
+/// Serializable version of CGPoint with fixedX flag
+struct SerializablePoint: Codable {
+    var x: Double
+    var y: Double
+    var isFixedX: Bool
+
+    func toCGPoint() -> CGPoint {
+        return CGPoint(x: x, y: y)
+    }
+
+    init(x: Double, y: Double, isFixedX: Bool) {
+        self.x = x
+        self.y = y
+        self.isFixedX = isFixedX
+    }
+
+    init(from point: CGPoint, isFixedX: Bool) {
+        self.x = Double(point.x)
+        self.y = Double(point.y)
+        self.isFixedX = isFixedX
+    }
+}
 
 class GameManager {
     static let shared = GameManager()
@@ -13,6 +60,7 @@ class GameManager {
     private(set) var currentFlightPlan: FlightPlan?
     private(set) var lastMissionResult: MissionResult?
     private(set) var currentPlaneDesign: PlaneDesign = PlaneDesign.defaultDesign
+    private(set) var currentCrossSectionPoints: CrossSectionPoints = CrossSectionPoints.defaultPoints
     private let propulsionManager = PropulsionManager()
     private var simulator: FlightSimulator?
 
@@ -47,13 +95,24 @@ class GameManager {
         return currentPlaneDesign
     }
 
+    /// Update the current cross-section spline points
+    func setCrossSectionPoints(_ points: CrossSectionPoints) {
+        currentCrossSectionPoints = points
+        print("Cross-section points updated: \(points.topPoints.count) top, \(points.bottomPoints.count) bottom")
+    }
+
+    /// Get the current cross-section spline points
+    func getCrossSectionPoints() -> CrossSectionPoints {
+        return currentCrossSectionPoints
+    }
+
     /// Simulate the entire flight based on the current flight plan
     func simulateFlight(plan: FlightPlan) -> MissionResult {
         // Reset simulator with current plane design
         simulator = FlightSimulator(initialFuel: 50000.0, planeDesign: currentPlaneDesign)
         propulsionManager.enableAutoMode()
 
-        print("Using plane design: Pitch \(currentPlaneDesign.pitchAngle)°, Yaw \(currentPlaneDesign.yawAngle)°, Pos \(currentPlaneDesign.position)")
+        print("Using plane design: Sweep \(currentPlaneDesign.sweepAngle)°, Tilt \(currentPlaneDesign.tiltAngle)°, Pos \(currentPlaneDesign.position)")
         print("  \(currentPlaneDesign.summary())")
 
         var segments: [FlightSegmentResult] = []

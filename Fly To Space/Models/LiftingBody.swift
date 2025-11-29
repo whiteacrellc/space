@@ -35,7 +35,8 @@ class LiftingBodyEngine {
     /// Generates the lifting body geometry based on the provided parameters.
     static func generateGeometry(
         coneAngle: Double,
-        planeAngle: Double,
+        sweepAngle: Double,
+        tiltAngle: Double,
         flatTopPct: Double = 70,
         heightFactor: Double = 10,
         slopeCurve: Double = 1.5
@@ -43,122 +44,248 @@ class LiftingBodyEngine {
 
         // Convert angles to radians
         let alpha = Float(coneAngle) * (Float.pi / 180.0)
-        let beta = Float(planeAngle) * (Float.pi / 180.0)
+        let sweepRad = Float(sweepAngle) * (Float.pi / 180.0)
+        let tiltRad = Float(tiltAngle) * (Float.pi / 180.0)
+
+        print("Generating geometry: coneAngle=\(coneAngle)°, sweepAngle=\(sweepAngle)°, tiltAngle=\(tiltAngle)°")
 
         // Define cross-sections along the length
         let sections = generateCrossSections(
             coneAngle: alpha,
-            planeAngle: beta
+            sweepAngle: sweepRad,
+            tiltAngle: tiltRad
         )
 
         // Generate mesh from cross-sections using NURBS-like interpolation
         return generateMeshFromSections(sections: sections)
     }
 
-    // MARK: - NACA Airfoil Generation
+    // MARK: - Spline Cross-Section Generation
 
-    /// Generate NACA 4-digit airfoil coordinates
-    /// Uses NACA 0012 (symmetric, 12% thickness) as base profile
-    static func generateNACA4DigitAirfoil(
-        thickness: Float,  // Maximum thickness as percentage of chord (e.g., 0.12 for 12%)
-        numPoints: Int = 50
+    /// Generate cross-section profile from spline control points
+    /// Uses the spline shape defined in the LiftingBodyDesigner
+    static func generateCrossSectionFromSpline(
+        crossSectionPoints: CrossSectionPoints,
+        numSamples: Int = 60
     ) -> [AirfoilPoint] {
 
         var points: [AirfoilPoint] = []
 
-        // Generate upper surface (0 to 1)
-        for i in 0...numPoints {
-            let x = Float(i) / Float(numPoints)
+        // Canvas dimensions from SplineCalculator
+        let canvasWidth: CGFloat = 800.0
+        let canvasHeight: CGFloat = 500.0
+        let centerY: CGFloat = 250.0  // Centerline from SplineCalculator
 
-            // NACA symmetric airfoil thickness distribution
-            // yt = 5*t*(0.2969*sqrt(x) - 0.1260*x - 0.3516*x^2 + 0.2843*x^3 - 0.1015*x^4)
-            let t = thickness
-            let yt = 5.0 * t * (
-                0.2969 * sqrt(x) -
-                0.1260 * x -
-                0.3516 * x * x +
-                0.2843 * x * x * x -
-                0.1015 * x * x * x * x
-            )
+        // Convert SerializablePoints to CGPoints
+        let topCGPoints = crossSectionPoints.topPoints.map { $0.toCGPoint() }
+        let bottomCGPoints = crossSectionPoints.bottomPoints.map { $0.toCGPoint() }
 
-            points.append(AirfoilPoint(x: x, y: yt))
+        // Find X extent
+        let allX = topCGPoints.map { $0.x } + bottomCGPoints.map { $0.x }
+        let minX = allX.min() ?? 100.0
+        let maxX = allX.max() ?? 700.0
+        let xRange = maxX - minX
+
+        // Sample the top spline
+        var topSamples: [(x: Float, y: Float)] = []
+        for i in 0..<numSamples {
+            let t = CGFloat(i) / CGFloat(numSamples - 1)
+            let x = minX + t * xRange
+
+            // Find closest point on top spline
+            let yValue = interpolateSpline(points: topCGPoints, atX: x)
+
+            // Normalize: x from 0 to 1, y centered around 0
+            let normalizedX = Float((x - minX) / xRange)
+            let normalizedY = Float((yValue - centerY) / canvasHeight) * 2.0  // Scale to reasonable range
+
+            topSamples.append((x: normalizedX, y: normalizedY))
         }
 
-        // Generate lower surface (1 to 0) - symmetric so just negate y
-        for i in (0..<numPoints).reversed() {
-            let x = Float(i) / Float(numPoints)
-            let t = thickness
-            let yt = 5.0 * t * (
-                0.2969 * sqrt(x) -
-                0.1260 * x -
-                0.3516 * x * x +
-                0.2843 * x * x * x -
-                0.1015 * x * x * x * x
-            )
+        // Sample the bottom spline
+        var bottomSamples: [(x: Float, y: Float)] = []
+        for i in 0..<numSamples {
+            let t = CGFloat(i) / CGFloat(numSamples - 1)
+            let x = minX + t * xRange
 
-            points.append(AirfoilPoint(x: x, y: -yt))
+            // Find closest point on bottom spline
+            let yValue = interpolateSpline(points: bottomCGPoints, atX: x)
+
+            // Normalize: x from 0 to 1, y centered around 0
+            let normalizedX = Float((x - minX) / xRange)
+            let normalizedY = Float((yValue - centerY) / canvasHeight) * 2.0  // Scale to reasonable range
+
+            bottomSamples.append((x: normalizedX, y: normalizedY))
+        }
+
+        // Create closed contour: top surface (LE to TE) then bottom surface (TE to LE)
+        for sample in topSamples {
+            points.append(AirfoilPoint(x: sample.x, y: sample.y))
+        }
+
+        for sample in bottomSamples.reversed() {
+            points.append(AirfoilPoint(x: sample.x, y: sample.y))
         }
 
         return points
     }
 
+    /// Simple linear interpolation to find Y value at a given X on a spline
+    static func interpolateSpline(points: [CGPoint], atX targetX: CGFloat) -> CGFloat {
+        // Find the two points that bracket targetX
+        var closestBefore: CGPoint?
+        var closestAfter: CGPoint?
+
+        for point in points {
+            if point.x <= targetX {
+                if closestBefore == nil || point.x > closestBefore!.x {
+                    closestBefore = point
+                }
+            }
+            if point.x >= targetX {
+                if closestAfter == nil || point.x < closestAfter!.x {
+                    closestAfter = point
+                }
+            }
+        }
+
+        // Linear interpolation
+        if let before = closestBefore, let after = closestAfter {
+            if abs(after.x - before.x) < 0.001 {
+                return before.y
+            }
+            let t = (targetX - before.x) / (after.x - before.x)
+            return before.y + t * (after.y - before.y)
+        } else if let before = closestBefore {
+            return before.y
+        } else if let after = closestAfter {
+            return after.y
+        }
+
+        return 250.0  // Default centerline
+    }
+
     // MARK: - Cross-Section Generation
 
     /// Generate cross-sections along the aircraft length
-    /// Leading edge defined by cone-plane intersection at z=0
+    /// Leading edge defined by cone-plane intersection
     /// Apex at (0,0,0), symmetric in y
     static func generateCrossSections(
         coneAngle: Float,
-        planeAngle: Float
+        sweepAngle: Float,
+        tiltAngle: Float
     ) -> [AirfoilSection] {
 
         var sections: [AirfoilSection] = []
 
         let numSections = 60
 
-        // Leading edge is at z=0, defined by cone-plane intersection
-        // Cone equation: y² + z² = (x * tan(α))²
-        // At z=0: y = ± x * tan(α)
-        // This gives us the width at each x position
+        // Calculate plane normal vector from sweep and tilt angles
+        // This matches the design screen's cone-plane intersection calculation
+        let nx = cos(sweepAngle) * cos(tiltAngle)
+        let ny = sin(sweepAngle) * cos(tiltAngle)
+        let nz = sin(tiltAngle)
 
-        // Calculate x range: apex at origin, extend back to create 100m+ length
-        // and ensure 300m+ width at widest point
-        let xEnd = aircraftLength  // Extend to 100m from apex
+        // Plane passes through the midpoint of the cone by default
+        // This can be adjusted with the position parameter in the future
+        let planeX = aircraftLength / 2.0
 
+        // Sample the cone-plane intersection to get the actual leading edge curve
+        // The intersection creates the planform shape (triangle, ellipse, etc.)
+        var leadingEdgePoints: [(x: Float, y: Float, z: Float)] = []
+        let numSamples = 200
+
+        for i in 0..<numSamples {
+            let theta = Float(i) * 2.0 * Float.pi / Float(numSamples)
+            let cosTheta = cos(theta)
+            let sinTheta = sin(theta)
+
+            // Solve for x where plane intersects cone surface at this angle
+            // Plane: nx*x + ny*y + nz*z = nx*planeX
+            // Cone: y = r*cos(θ), z = r*sin(θ), r = x*tan(coneAngle)
+            let denominator = nx + ny * tan(coneAngle) * cosTheta + nz * tan(coneAngle) * sinTheta
+
+            if abs(denominator) > 0.001 {
+                let x = nx * planeX / denominator
+                if x >= 0 && x <= aircraftLength {
+                    let r = x * tan(coneAngle)
+                    let y = r * cosTheta
+                    let z = r * sinTheta
+                    leadingEdgePoints.append((x: x, y: y, z: z))
+                }
+            }
+        }
+
+        if leadingEdgePoints.isEmpty {
+            print("ERROR: No leading edge points found!")
+            return sections
+        }
+
+        // Find the x-extent of the intersection
+        let minX = leadingEdgePoints.map { $0.x }.min() ?? 0
+        let maxX = leadingEdgePoints.map { $0.x }.max() ?? aircraftLength
+
+        print("Cone-plane intersection: minX=\(minX), maxX=\(maxX), range=\(maxX - minX)")
+        print("Leading edge points: \(leadingEdgePoints.count)")
+
+        // Now create sections along the x-axis
         for i in 0...numSections {
             let t = Float(i) / Float(numSections)  // 0 to 1
+            let x = minX + t * (maxX - minX)
 
-            // x goes from apex (0) backward to -xEnd
-            // This gives leading edge from nose (0,0,0) backward
-            let x = t * xEnd
+            // Find all leading edge points at this x position
+            let tolerance: Float = (maxX - minX) / Float(numSections * 2)
+            let pointsAtX = leadingEdgePoints.filter { abs($0.x - x) < tolerance }
 
-            // Calculate half-width at this x from cone-plane intersection
-            // y = x * tan(coneAngle)
-            let halfWidth = x * tan(coneAngle)
-
-            // Ensure minimum dimensions for payload and max width
-            let actualHalfWidth: Float
-            if halfWidth < maxWidth / 2.0 {
-                actualHalfWidth = halfWidth
-            } else {
-                actualHalfWidth = maxWidth / 2.0  // Cap at max width
+            if pointsAtX.isEmpty {
+                continue
             }
 
-            // Calculate height using NACA airfoil thickness
-            // Height is maximum at center and tapers toward edges
-            let maxHeight = calculateHeightAtPosition(x: x, halfWidth: actualHalfWidth)
+            // Calculate the span (width in Y direction) at this X from leading edge
+            let yValues = pointsAtX.map { $0.y }
+            let halfSpan = max(abs(yValues.min() ?? 0), abs(yValues.max() ?? 0))
 
-            // Thickness ratio for NACA airfoil (scaled to provide proper height)
-            let thicknessRatio = min(0.15, maxHeight / max(actualHalfWidth * 2.0, 1.0))
+            // Ensure minimum span to fit cargo box (8m width needed at payload region)
+            let payloadStart: Float = 30.0
+            let payloadEnd: Float = 50.0
+            var requiredHalfSpan = halfSpan
 
-            // Create airfoil section
+            if x >= payloadStart && x <= payloadEnd {
+                // Payload region needs at least 4m half-span (8m total)
+                requiredHalfSpan = max(halfSpan, 8.0)
+            }
+
+            // Cap at max width
+            let actualHalfSpan = min(requiredHalfSpan, maxWidth / 2.0)
+
+            // Calculate maximum height at centerline for this X position
+            // Payload region needs 8m height, taper elsewhere
+            var centerlineHeight: Float
+            if x >= payloadStart && x <= payloadEnd {
+                // Payload region: ensure 8m height for cargo box
+                centerlineHeight = 10.0  // A bit more than 8m for clearance
+            } else if x < payloadStart {
+                // Forward taper
+                let t = x / payloadStart
+                centerlineHeight = 1.0 + (10.0 - 1.0) * t
+            } else {
+                // Aft taper
+                let dist = x - payloadEnd
+                let totalAftDist = maxX - payloadEnd
+                let t = 1.0 - (dist / totalAftDist)
+                centerlineHeight = 1.0 + (10.0 - 1.0) * t
+            }
+
+            // Store section data
+            // chord = span (Y width), thickness = not used (we'll use airfoil design directly)
+            // scale = centerline height
             let section = AirfoilSection(
                 centerX: x,
                 centerY: 0,
-                centerZ: 0,  // Leading edge at z=0
-                chord: actualHalfWidth * 2.0,  // Full width (span)
-                thickness: thicknessRatio,
-                scale: 1.0
+                centerZ: 0,  // Centerline at Z=0
+                chord: actualHalfSpan * 2.0,  // Full span width
+                thickness: 0.12,  // Not used anymore
+                scale: centerlineHeight  // Maximum height at centerline
             )
 
             sections.append(section)
@@ -219,88 +346,127 @@ class LiftingBodyEngine {
         var normals: [SCNVector3] = []
         var indices: [Int32] = []
 
-        let circumferentialPoints = 40  // Points around each cross-section
+        // Retrieve cross-section spline points from GameManager
+        let crossSectionPoints = GameManager.shared.getCrossSectionPoints()
 
-        // Generate vertices for each cross-section
-        for (sectionIdx, section) in sections.enumerated() {
-            let airfoil = generateNACA4DigitAirfoil(thickness: section.thickness)
+        let spanwisePoints = 40   // Points across the span (Y direction)
+        let airfoilPoints = 30    // Points defining cross-section profile (for Z direction)
 
-            // Sample airfoil points evenly around the profile
-            for i in 0..<circumferentialPoints {
-                let t = Float(i) / Float(circumferentialPoints)
-                let airfoilIdx = Int(t * Float(airfoil.count - 1))
-                let point = airfoil[airfoilIdx]
+        // Generate the base cross-section shape once (this defines vertical profile)
+        let baseAirfoil = generateCrossSectionFromSpline(crossSectionPoints: crossSectionPoints, numSamples: airfoilPoints)
 
-                // Scale airfoil to section dimensions
-                // Leading edge is at z=0
-                // Airfoil chord extends in y direction (spanwise)
-                // Airfoil thickness extends in z direction (vertical/height)
+        print("Using custom spline cross-section with \(crossSectionPoints.topPoints.count) top points, \(crossSectionPoints.bottomPoints.count) bottom points")
 
-                let spanPos = (point.x - 0.5) * section.chord     // -chord/2 to +chord/2 (spanwise)
-                let heightPos = point.y * section.chord           // Scaled height
+        // Generate vertices for each longitudinal cross-section
+        for (_, section) in sections.enumerated() {
+            // At this X position, create vertices across the span
+            // The height tapers from centerline to wingtips
 
-                // Position in 3D space:
-                // X = longitudinal (backward from apex at origin)
-                // Y = lateral/spanwise (symmetric)
-                // Z = vertical/height (leading edge at z=0)
-                let vertex = SCNVector3(
-                    section.centerX,           // Longitudinal position
-                    spanPos,                   // Spanwise position (symmetric ±y)
-                    heightPos                  // Height (from leading edge at z=0)
-                )
+            let halfSpan = section.chord / 2.0  // Maximum Y extent at this X station
+            let centerlineHeight = section.scale  // Maximum height at Y=0
+            let wingtipHeight: Float = 0.25  // Height at maximum Y (wingtips)
 
-                vertices.append(vertex)
+            for spanIdx in 0..<spanwisePoints {
+                // Spanwise position from -halfSpan to +halfSpan
+                let spanFraction = Float(spanIdx) / Float(spanwisePoints - 1)  // 0 to 1
+                let yPos = (spanFraction - 0.5) * section.chord  // -halfSpan to +halfSpan
+
+                // Calculate height scaling at this spanwise position
+                // Taper from centerlineHeight at Y=0 to wingtipHeight at Y=±halfSpan
+                let spanRatio = abs(yPos) / halfSpan  // 0 at center, 1 at tips
+                let heightAtThisY = centerlineHeight * (1.0 - spanRatio) + wingtipHeight * spanRatio
+
+                // For each spanwise position, create airfoil profile in Z direction
+                for airfoilIdx in 0..<airfoilPoints {
+                    let t = Float(airfoilIdx) / Float(airfoilPoints - 1)  // 0 to 1
+
+                    // Sample airfoil at this chordwise position
+                    let sampleIdx = Int(t * Float(baseAirfoil.count - 1))
+                    let airfoilPoint = baseAirfoil[min(sampleIdx, baseAirfoil.count - 1)]
+
+                    // Scale airfoil y-coordinate to actual height at this spanwise position
+                    let zPos = section.centerZ + airfoilPoint.y * heightAtThisY
+
+                    let vertex = SCNVector3(
+                        section.centerX,  // Longitudinal (along fuselage)
+                        yPos,              // Spanwise (width)
+                        zPos               // Vertical (height from airfoil, tapered)
+                    )
+
+                    vertices.append(vertex)
+                }
             }
         }
 
-        // Generate indices to connect cross-sections
+        // Generate indices to connect the grid
+        let pointsPerSection = spanwisePoints * airfoilPoints
+
         for sectionIdx in 0..<(sections.count - 1) {
-            let currentRingStart = sectionIdx * circumferentialPoints
-            let nextRingStart = (sectionIdx + 1) * circumferentialPoints
+            let currentSectionStart = sectionIdx * pointsPerSection
+            let nextSectionStart = (sectionIdx + 1) * pointsPerSection
 
-            for i in 0..<circumferentialPoints {
-                let i1 = currentRingStart + i
-                let i2 = currentRingStart + (i + 1) % circumferentialPoints
-                let i3 = nextRingStart + i
-                let i4 = nextRingStart + (i + 1) % circumferentialPoints
+            // Connect vertices between adjacent sections
+            for spanIdx in 0..<(spanwisePoints - 1) {
+                for airfoilIdx in 0..<(airfoilPoints - 1) {
+                    // Four corners of current quad
+                    let i0 = currentSectionStart + spanIdx * airfoilPoints + airfoilIdx
+                    let i1 = currentSectionStart + spanIdx * airfoilPoints + (airfoilIdx + 1)
+                    let i2 = currentSectionStart + (spanIdx + 1) * airfoilPoints + airfoilIdx
+                    let i3 = currentSectionStart + (spanIdx + 1) * airfoilPoints + (airfoilIdx + 1)
 
-                // Create two triangles for each quad
+                    // Four corners of next section's quad
+                    let i4 = nextSectionStart + spanIdx * airfoilPoints + airfoilIdx
+                    let i5 = nextSectionStart + spanIdx * airfoilPoints + (airfoilIdx + 1)
+                    let i6 = nextSectionStart + (spanIdx + 1) * airfoilPoints + airfoilIdx
+
+                    // Connect current section to next section (longitudinal quads)
+                    indices.append(contentsOf: [
+                        Int32(i0), Int32(i4), Int32(i1),
+                        Int32(i1), Int32(i4), Int32(i5)
+                    ])
+
+                    // Side faces (connect spanwise)
+                    indices.append(contentsOf: [
+                        Int32(i0), Int32(i2), Int32(i4),
+                        Int32(i2), Int32(i6), Int32(i4)
+                    ])
+
+                    // Top/bottom faces (connect along airfoil)
+                    indices.append(contentsOf: [
+                        Int32(i0), Int32(i1), Int32(i2),
+                        Int32(i1), Int32(i3), Int32(i2)
+                    ])
+                }
+            }
+
+            // Close the edges (spanwise edges at each airfoil endpoint)
+            for spanIdx in 0..<(spanwisePoints - 1) {
+                // Close front edge (airfoilIdx = 0)
+                let i0 = currentSectionStart + spanIdx * airfoilPoints
+                let i1 = currentSectionStart + (spanIdx + 1) * airfoilPoints
+                let i2 = nextSectionStart + spanIdx * airfoilPoints
+                let i3 = nextSectionStart + (spanIdx + 1) * airfoilPoints
+
                 indices.append(contentsOf: [
-                    Int32(i1), Int32(i2), Int32(i3),
-                    Int32(i2), Int32(i4), Int32(i3)
+                    Int32(i0), Int32(i2), Int32(i1),
+                    Int32(i1), Int32(i2), Int32(i3)
+                ])
+
+                // Close back edge (airfoilIdx = airfoilPoints-1)
+                let j0 = currentSectionStart + spanIdx * airfoilPoints + (airfoilPoints - 1)
+                let j1 = currentSectionStart + (spanIdx + 1) * airfoilPoints + (airfoilPoints - 1)
+                let j2 = nextSectionStart + spanIdx * airfoilPoints + (airfoilPoints - 1)
+                let j3 = nextSectionStart + (spanIdx + 1) * airfoilPoints + (airfoilPoints - 1)
+
+                indices.append(contentsOf: [
+                    Int32(j0), Int32(j1), Int32(j2),
+                    Int32(j1), Int32(j3), Int32(j2)
                 ])
             }
         }
 
         // Calculate normals
         normals = calculateNormals(vertices: vertices, indices: indices)
-
-        // Close the nose (first section at apex x=0)
-        let noseCenterIdx = Int32(vertices.count)
-        vertices.append(SCNVector3(0, 0, 0))  // Apex at origin
-        normals.append(SCNVector3(-1, 0, 0))
-
-        for i in 0..<circumferentialPoints {
-            let i1 = i
-            let i2 = (i + 1) % circumferentialPoints
-            indices.append(contentsOf: [
-                noseCenterIdx, Int32(i2), Int32(i1)
-            ])
-        }
-
-        // Close the tail (last section at x=100m)
-        let tailCenterIdx = Int32(vertices.count)
-        let lastRingStart = (sections.count - 1) * circumferentialPoints
-        vertices.append(SCNVector3(sections.last!.centerX, 0, 0))  // Centerline
-        normals.append(SCNVector3(1, 0, 0))
-
-        for i in 0..<circumferentialPoints {
-            let i1 = lastRingStart + i
-            let i2 = lastRingStart + (i + 1) % circumferentialPoints
-            indices.append(contentsOf: [
-                tailCenterIdx, Int32(i1), Int32(i2)
-            ])
-        }
 
         // Create geometry
         let vertexSource = SCNGeometrySource(vertices: vertices)

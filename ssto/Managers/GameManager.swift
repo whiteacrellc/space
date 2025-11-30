@@ -31,6 +31,52 @@ struct CrossSectionPoints: Codable {
     )
 }
 
+/// Stores the top view planform shape (leading edge) design
+struct TopViewPlanform: Codable {
+    var noseTip: SerializablePoint
+    var frontControlLeft: SerializablePoint
+    var midLeft: SerializablePoint
+    var rearControlLeft: SerializablePoint
+    var tailLeft: SerializablePoint
+
+    static let defaultPlanform = TopViewPlanform(
+        noseTip: SerializablePoint(x: 50, y: 0, isFixedX: true),
+        frontControlLeft: SerializablePoint(x: 150, y: -30, isFixedX: false),
+        midLeft: SerializablePoint(x: 300, y: -100, isFixedX: false),
+        rearControlLeft: SerializablePoint(x: 500, y: -80, isFixedX: false),
+        tailLeft: SerializablePoint(x: 750, y: -50, isFixedX: false)
+    )
+}
+
+/// Stores the side profile (fuselage) shape design
+struct SideProfileShape: Codable {
+    var frontStart: SerializablePoint
+    var frontControl: SerializablePoint
+    var frontEnd: SerializablePoint
+    var engineEnd: SerializablePoint
+    var exhaustControl: SerializablePoint
+    var exhaustEnd: SerializablePoint
+    var topStart: SerializablePoint
+    var topControl: SerializablePoint
+    var topEnd: SerializablePoint
+    var engineLength: Double
+    var maxHeight: Double
+
+    static let defaultProfile = SideProfileShape(
+        frontStart: SerializablePoint(x: 50, y: 200, isFixedX: true),
+        frontControl: SerializablePoint(x: 150, y: 80, isFixedX: false),
+        frontEnd: SerializablePoint(x: 250, y: 100, isFixedX: false),
+        engineEnd: SerializablePoint(x: 490, y: 100, isFixedX: false),
+        exhaustControl: SerializablePoint(x: 650, y: 80, isFixedX: false),
+        exhaustEnd: SerializablePoint(x: 750, y: 200, isFixedX: true),
+        topStart: SerializablePoint(x: 50, y: 200, isFixedX: true),
+        topControl: SerializablePoint(x: 400, y: 320, isFixedX: false),
+        topEnd: SerializablePoint(x: 750, y: 200, isFixedX: true),
+        engineLength: 240,
+        maxHeight: 120
+    )
+}
+
 /// Serializable version of CGPoint with fixedX flag
 struct SerializablePoint: Codable {
     var x: Double
@@ -61,6 +107,8 @@ class GameManager {
     private(set) var lastMissionResult: MissionResult?
     private(set) var currentPlaneDesign: PlaneDesign = PlaneDesign.defaultDesign
     private(set) var currentCrossSectionPoints: CrossSectionPoints = CrossSectionPoints.defaultPoints
+    private(set) var currentTopViewPlanform: TopViewPlanform = TopViewPlanform.defaultPlanform
+    private(set) var currentSideProfile: SideProfileShape = SideProfileShape.defaultProfile
     private let propulsionManager = PropulsionManager()
     private var simulator: FlightSimulator?
 
@@ -104,6 +152,28 @@ class GameManager {
     /// Get the current cross-section spline points
     func getCrossSectionPoints() -> CrossSectionPoints {
         return currentCrossSectionPoints
+    }
+
+    /// Update the current top view planform
+    func setTopViewPlanform(_ planform: TopViewPlanform) {
+        currentTopViewPlanform = planform
+        print("Top view planform updated")
+    }
+
+    /// Get the current top view planform
+    func getTopViewPlanform() -> TopViewPlanform {
+        return currentTopViewPlanform
+    }
+
+    /// Update the current side profile shape
+    func setSideProfile(_ profile: SideProfileShape) {
+        currentSideProfile = profile
+        print("Side profile shape updated")
+    }
+
+    /// Get the current side profile shape
+    func getSideProfile() -> SideProfileShape {
+        return currentSideProfile
     }
 
     /// Simulate the entire flight based on the current flight plan
@@ -202,5 +272,82 @@ class GameManager {
     /// Get the propulsion manager (for UI display)
     func getPropulsionManager() -> PropulsionManager {
         return propulsionManager
+    }
+
+    // MARK: - Aircraft Design Bundle for Save/Load
+
+    /// Bundle containing all aircraft design parameters for saving/loading
+    struct AircraftDesignBundle: Codable {
+        let sideProfile: SideProfileShape
+        let topViewPlanform: TopViewPlanform
+        let planeDesign: PlaneDesign
+        let crossSectionPoints: CrossSectionPoints
+        let savedDate: Date
+    }
+
+    // MARK: - Save/Load Methods
+
+    /// Save the current aircraft design with a given name
+    /// - Parameter name: The name to save the design under
+    /// - Returns: true if save was successful, false otherwise
+    func saveDesign(name: String) -> Bool {
+        let bundle = AircraftDesignBundle(
+            sideProfile: currentSideProfile,
+            topViewPlanform: currentTopViewPlanform,
+            planeDesign: currentPlaneDesign,
+            crossSectionPoints: currentCrossSectionPoints,
+            savedDate: Date()
+        )
+
+        let encoder = JSONEncoder()
+        guard let data = try? encoder.encode(bundle) else {
+            print("Failed to encode design bundle")
+            return false
+        }
+
+        UserDefaults.standard.set(data, forKey: "savedDesign_\(name)")
+        print("Design '\(name)' saved successfully")
+        return true
+    }
+
+    /// Load a saved aircraft design by name
+    /// - Parameter name: The name of the design to load
+    /// - Returns: true if load was successful, false otherwise
+    func loadDesign(name: String) -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: "savedDesign_\(name)") else {
+            print("No saved design found with name '\(name)'")
+            return false
+        }
+
+        let decoder = JSONDecoder()
+        guard let bundle = try? decoder.decode(AircraftDesignBundle.self, from: data) else {
+            print("Failed to decode design bundle")
+            return false
+        }
+
+        currentSideProfile = bundle.sideProfile
+        currentTopViewPlanform = bundle.topViewPlanform
+        currentPlaneDesign = bundle.planeDesign
+        currentCrossSectionPoints = bundle.crossSectionPoints
+
+        print("Design '\(name)' loaded successfully")
+        return true
+    }
+
+    /// Get a list of all saved design names
+    /// - Returns: Array of design names, sorted alphabetically
+    func getSavedDesignNames() -> [String] {
+        let defaults = UserDefaults.standard.dictionaryRepresentation()
+        return defaults.keys
+            .filter { $0.hasPrefix("savedDesign_") }
+            .map { String($0.dropFirst("savedDesign_".count)) }
+            .sorted()
+    }
+
+    /// Delete a saved design by name
+    /// - Parameter name: The name of the design to delete
+    func deleteDesign(name: String) {
+        UserDefaults.standard.removeObject(forKey: "savedDesign_\(name)")
+        print("Design '\(name)' deleted")
     }
 }

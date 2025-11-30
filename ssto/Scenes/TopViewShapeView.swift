@@ -1,87 +1,4 @@
-//
-//  DraggableControlPoint.swift
-//  ssto
-//
-//  Created by tom whittaker on 11/29/25.
-//
-
 import UIKit
-
-class DraggableControlPoint: UIView {
-    var onMoved: ((CGPoint) -> Void)?
-    var isConstrainedToVertical: Bool = false
-    var isConstrainedToHorizontal: Bool = false
-    var offset: CGFloat = 0.0  // Offset for placing the control point outside the shape
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .white
-        layer.cornerRadius = frame.width / 2
-        layer.borderWidth = 1
-        layer.borderColor = UIColor.black.cgColor
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
-        addGestureRecognizer(pan)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        let translation = gesture.translation(in: superview)
-        var newCenter = center
-        if isConstrainedToVertical {
-            newCenter.y += translation.y
-        } else if isConstrainedToHorizontal {
-            newCenter.x += translation.x
-        } else {
-            newCenter.x += translation.x
-            newCenter.y += translation.y
-        }
-        center = newCenter
-        gesture.setTranslation(.zero, in: superview)
-        onMoved?(center)
-    }
-}
-
-class GridBackgroundView: UIView {
-    var spacing: CGFloat = 50
-
-    override func draw(_ rect: CGRect) {
-        super.draw(rect)
-        guard let context = UIGraphicsGetCurrentContext() else { return }
-
-        // Draw grid
-        context.setStrokeColor(UIColor.white.withAlphaComponent(0.1).cgColor)
-        context.setLineWidth(1)
-
-        // Vertical lines
-        var x: CGFloat = 0
-        while x <= rect.width {
-            context.move(to: CGPoint(x: x, y: 0))
-            context.addLine(to: CGPoint(x: x, y: rect.height))
-            x += spacing
-        }
-
-        // Horizontal lines
-        var y: CGFloat = 0
-        while y <= rect.height {
-            context.move(to: CGPoint(x: 0, y: y))
-            context.addLine(to: CGPoint(x: rect.width, y: y))
-            y += spacing
-        }
-
-        context.strokePath()
-
-        // Draw centerline
-        context.setStrokeColor(UIColor.red.withAlphaComponent(0.5).cgColor)
-        context.setLineDash(phase: 0, lengths: [5, 5])
-        let centerY = rect.height / 2
-        context.move(to: CGPoint(x: 0, y: centerY))
-        context.addLine(to: CGPoint(x: rect.width, y: centerY))
-        context.strokePath()
-    }
-}
 
 class TopViewShapeView: UIView {
     var noseTipModel = CGPoint.zero  // Fixed at (0, 0) in model space (centerline y=0)
@@ -190,14 +107,18 @@ class TopViewDesignViewController: UIViewController {
         view.addSubview(headerView)
 
         // Done button
-        let doneButton = UIButton(type: .system)
-        doneButton.setTitle("← Done", for: .normal)
-        doneButton.setTitleColor(.yellow, for: .normal)
-        doneButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .medium)
-        doneButton.backgroundColor = UIColor.white.withAlphaComponent(0.1)
-        doneButton.layer.cornerRadius = 8
-        doneButton.contentEdgeInsets = UIEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
-        doneButton.addTarget(self, action: #selector(doneButtonTapped), for: .touchUpInside)
+        var doneButtonConfig = UIButton.Configuration.plain()
+        doneButtonConfig.title = "← Done"
+        doneButtonConfig.baseForegroundColor = .yellow
+        doneButtonConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFont.systemFont(ofSize: 18, weight: .medium)
+            return outgoing
+        }
+        doneButtonConfig.background.backgroundColor = UIColor.white.withAlphaComponent(0.1)
+        doneButtonConfig.background.cornerRadius = 8
+        doneButtonConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
+        let doneButton = UIButton(configuration: doneButtonConfig, primaryAction: UIAction(handler: { _ in self.doneButtonTapped() }))
         headerView.addSubview(doneButton)
 
         // Title label
@@ -209,14 +130,18 @@ class TopViewDesignViewController: UIViewController {
         headerView.addSubview(titleLabel)
 
         // Side View button
-        let sideViewButton = UIButton(type: .system)
-        sideViewButton.setTitle("Side View", for: .normal)
-        sideViewButton.setTitleColor(.cyan, for: .normal)
-        sideViewButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .medium)
-        sideViewButton.backgroundColor = UIColor.white.withAlphaComponent(0.1)
-        sideViewButton.layer.cornerRadius = 8
-        sideViewButton.contentEdgeInsets = UIEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
-        sideViewButton.addTarget(self, action: #selector(sideViewButtonTapped), for: .touchUpInside)
+        var sideViewButtonConfig = UIButton.Configuration.plain()
+        sideViewButtonConfig.title = "Side View"
+        sideViewButtonConfig.baseForegroundColor = .cyan
+        sideViewButtonConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFont.systemFont(ofSize: 18, weight: .medium)
+            return outgoing
+        }
+        sideViewButtonConfig.background.backgroundColor = UIColor.white.withAlphaComponent(0.1)
+        sideViewButtonConfig.background.cornerRadius = 8
+        sideViewButtonConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
+        let sideViewButton = UIButton(configuration: sideViewButtonConfig, primaryAction: UIAction(handler: { _ in self.sideViewButtonTapped() }))
         headerView.addSubview(sideViewButton)
 
         // Layout
@@ -275,6 +200,7 @@ class TopViewDesignViewController: UIViewController {
         // Grid background
         gridBackground.backgroundColor = .clear
         gridBackground.spacing = 50
+        gridBackground.showCenterline = true
         canvasContainerView.addSubview(gridBackground)
 
         // Shape view
@@ -393,10 +319,30 @@ class TopViewDesignViewController: UIViewController {
     }
 
     @objc private func doneButtonTapped() {
+        // Save the current design to GameManager
+        let planform = TopViewPlanform(
+            noseTip: SerializablePoint(from: shapeView.noseTipModel, isFixedX: true),
+            frontControlLeft: SerializablePoint(from: shapeView.frontControlLeftModel, isFixedX: false),
+            midLeft: SerializablePoint(from: shapeView.midLeftModel, isFixedX: false),
+            rearControlLeft: SerializablePoint(from: shapeView.rearControlLeftModel, isFixedX: false),
+            tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false)
+        )
+        GameManager.shared.setTopViewPlanform(planform)
+
         dismiss(animated: true, completion: nil)
     }
 
     @objc private func sideViewButtonTapped() {
+        // Save the current design to GameManager before transitioning
+        let planform = TopViewPlanform(
+            noseTip: SerializablePoint(from: shapeView.noseTipModel, isFixedX: true),
+            frontControlLeft: SerializablePoint(from: shapeView.frontControlLeftModel, isFixedX: false),
+            midLeft: SerializablePoint(from: shapeView.midLeftModel, isFixedX: false),
+            rearControlLeft: SerializablePoint(from: shapeView.rearControlLeftModel, isFixedX: false),
+            tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false)
+        )
+        GameManager.shared.setTopViewPlanform(planform)
+
         let sideViewController = SSTODesignViewController()
         sideViewController.modalPresentationStyle = .fullScreen
         present(sideViewController, animated: true, completion: nil)

@@ -141,13 +141,14 @@ class SSTODesignViewController: UIViewController {
         view.addSubview(headerView)
 
         // Done button
-        let doneButton = UIButton(type: .system)
-        doneButton.setTitle("← Done", for: .normal)
-        doneButton.setTitleColor(.yellow, for: .normal)
-        doneButton.titleLabel?.font = UIFont.systemFont(ofSize: 18, weight: .medium)
-        doneButton.backgroundColor = UIColor.white.withAlphaComponent(0.1)
-        doneButton.layer.cornerRadius = 8
-        doneButton.contentEdgeInsets = UIEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
+        var doneConfig = UIButton.Configuration.filled()
+        doneConfig.title = "← Done"
+        doneConfig.baseForegroundColor = .yellow
+        doneConfig.baseBackgroundColor = UIColor.white.withAlphaComponent(0.1)
+        doneConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
+        doneConfig.cornerStyle = .medium
+
+        let doneButton = UIButton(configuration: doneConfig)
         doneButton.addTarget(self, action: #selector(doneButtonTapped), for: .touchUpInside)
         headerView.addSubview(doneButton)
 
@@ -159,10 +160,23 @@ class SSTODesignViewController: UIViewController {
         titleLabel.textAlignment = .center
         headerView.addSubview(titleLabel)
 
+        // 3D View button
+        var threeDConfig = UIButton.Configuration.filled()
+        threeDConfig.title = "3D View →"
+        threeDConfig.baseForegroundColor = .cyan
+        threeDConfig.baseBackgroundColor = UIColor.white.withAlphaComponent(0.1)
+        threeDConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
+        threeDConfig.cornerStyle = .medium
+        
+        let threeDButton = UIButton(configuration: threeDConfig)
+        threeDButton.addTarget(self, action: #selector(show3DView), for: .touchUpInside)
+        headerView.addSubview(threeDButton)
+
         // Layout
         headerView.translatesAutoresizingMaskIntoConstraints = false
         doneButton.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        threeDButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             headerView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -174,8 +188,19 @@ class SSTODesignViewController: UIViewController {
             doneButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
 
             titleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor)
+            titleLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+
+            threeDButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -20),
+            threeDButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor)
         ])
+    }
+
+    @objc private func show3DView() {
+        let wireframeVC = WireframeViewController()
+        wireframeVC.shapeView = self.shapeView
+        wireframeVC.maxHeight = CGFloat(self.maxHeightSlider.value)
+        wireframeVC.modalPresentationStyle = .fullScreen
+        self.present(wireframeVC, animated: true, completion: nil)
     }
 
     private func setupFooter() {
@@ -461,6 +486,22 @@ class SSTODesignViewController: UIViewController {
     }
 
     @objc private func doneButtonTapped() {
+        // Save the current design to GameManager
+        let profile = SideProfileShape(
+            frontStart: SerializablePoint(from: shapeView.frontStartModel, isFixedX: true),
+            frontControl: SerializablePoint(from: shapeView.frontControlModel, isFixedX: false),
+            frontEnd: SerializablePoint(from: shapeView.frontEndModel, isFixedX: false),
+            engineEnd: SerializablePoint(from: shapeView.engineEndModel, isFixedX: false),
+            exhaustControl: SerializablePoint(from: shapeView.exhaustControlModel, isFixedX: false),
+            exhaustEnd: SerializablePoint(from: shapeView.exhaustEndModel, isFixedX: true),
+            topStart: SerializablePoint(from: shapeView.topStartModel, isFixedX: true),
+            topControl: SerializablePoint(from: shapeView.topControlModel, isFixedX: false),
+            topEnd: SerializablePoint(from: shapeView.topEndModel, isFixedX: true),
+            engineLength: Double(shapeView.engineLength),
+            maxHeight: Double(maxHeightSlider.value)
+        )
+        GameManager.shared.setSideProfile(profile)
+
         dismiss(animated: true, completion: nil)
     }
 }

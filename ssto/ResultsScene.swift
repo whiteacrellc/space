@@ -209,7 +209,6 @@ class ResultsScene: SKScene {
 // Extension to add dashed line support
 extension SKShapeNode {
     func setLineLength(_ length: CGFloat, dash: CGFloat) {
-        let pattern: [CGFloat] = [length, dash]
         let dashed = SKShapeNode(path: self.path!)
         dashed.strokeColor = self.strokeColor
         dashed.lineWidth = self.lineWidth

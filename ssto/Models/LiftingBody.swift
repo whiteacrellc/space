@@ -72,7 +72,6 @@ class LiftingBodyEngine {
         var points: [AirfoilPoint] = []
 
         // Canvas dimensions from SplineCalculator
-        let canvasWidth: CGFloat = 800.0
         let canvasHeight: CGFloat = 500.0
         let centerY: CGFloat = 250.0  // Centerline from SplineCalculator
 

@@ -106,7 +106,6 @@ class AircraftDesignModel: ObservableObject {
             YB[i] = YB[i] / chord
         }
         
-        let Vinf: Double = 1.0
         let AoA: Double = 30.0
         let AoAR = AoA * .pi / 180.0
         
@@ -125,13 +124,9 @@ class AircraftDesignModel: ObservableObject {
         }
         
         // Compute geometric quantities
-        var XC = [Double](repeating: 0, count: numPan)
-        var YC = [Double](repeating: 0, count: numPan)
         var S = [Double](repeating: 0, count: numPan)
         var phi = [Double](repeating: 0, count: numPan)
         for i in 0..<numPan {
-            XC[i] = 0.5 * (XB[i] + XB[i+1])
-            YC[i] = 0.5 * (YB[i] + YB[i+1])
             let dx = XB[i+1] - XB[i]
             let dy = YB[i+1] - YB[i]
             S[i] = sqrt(dx*dx + dy*dy)
@@ -141,7 +136,7 @@ class AircraftDesignModel: ObservableObject {
             }
         }
         
-        var delta = phi.map { $0 + .pi / 2 }
+        let delta = phi.map { $0 + .pi / 2 }
         var beta = delta.map { $0 - AoAR }
         beta = beta.map { $0 > 2 * .pi ? $0 - 2 * .pi : $0 }
         
@@ -175,7 +170,6 @@ class AircraftDesignModel: ObservableObject {
         let a: Double = 303.0 // speed of sound m/s
         let V = 0.5 * a // Mach 0.5
         let q = 0.5 * rho * V * V
-        let physicalChord: Double = 6.7 // m (physical scale)
         let refArea: Double = 18.0 // m² (planform area)
         
         let lift = q * refArea * CL

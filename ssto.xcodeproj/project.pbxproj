@@ -12,37 +12,37 @@
 			containerPortal = E26344992ED6712900D02206 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = E26344A02ED6712900D02206;
-			remoteInfo = "ssto";
+			remoteInfo = ssto;
 		};
 		E26344C52ED6712B00D02206 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = E26344992ED6712900D02206 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = E26344A02ED6712900D02206;
-			remoteInfo = "ssto";
+			remoteInfo = ssto;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		E26344A12ED6712900D02206 /* ssto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ssto.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		E26344BA2ED6712B00D02206 /* sstoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "sstoTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		E26344C42ED6712B00D02206 /* sstoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "sstoUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E26344A12ED6712900D02206 /* ssto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ssto.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E26344BA2ED6712B00D02206 /* sstoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = sstoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E26344C42ED6712B00D02206 /* sstoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = sstoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E26344A32ED6712900D02206 /* ssto */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "ssto";
+			path = ssto;
 			sourceTree = "<group>";
 		};
 		E26344BD2ED6712B00D02206 /* sstoTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "sstoTests";
+			path = sstoTests;
 			sourceTree = "<group>";
 		};
 		E26344C72ED6712B00D02206 /* sstoUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "sstoUITests";
+			path = sstoUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -110,10 +110,10 @@
 			fileSystemSynchronizedGroups = (
 				E26344A32ED6712900D02206 /* ssto */,
 			);
-			name = "ssto";
+			name = ssto;
 			packageProductDependencies = (
 			);
-			productName = "ssto";
+			productName = ssto;
 			productReference = E26344A12ED6712900D02206 /* ssto.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -133,10 +133,10 @@
 			fileSystemSynchronizedGroups = (
 				E26344BD2ED6712B00D02206 /* sstoTests */,
 			);
-			name = "sstoTests";
+			name = sstoTests;
 			packageProductDependencies = (
 			);
-			productName = "sstoTests";
+			productName = sstoTests;
 			productReference = E26344BA2ED6712B00D02206 /* sstoTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
@@ -156,10 +156,10 @@
 			fileSystemSynchronizedGroups = (
 				E26344C72ED6712B00D02206 /* sstoUITests */,
 			);
-			name = "sstoUITests";
+			name = sstoUITests;
 			packageProductDependencies = (
 			);
-			productName = "sstoUITests";
+			productName = sstoUITests;
 			productReference = E26344C42ED6712B00D02206 /* sstoUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
@@ -497,7 +497,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "ssto";
+				TEST_TARGET_NAME = ssto;
 			};
 			name = Debug;
 		};
@@ -514,7 +514,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "ssto";
+				TEST_TARGET_NAME = ssto;
 			};
 			name = Release;
 		};

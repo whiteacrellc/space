@@ -50,7 +50,6 @@ struct MissionResult {
         for segment in segments {
             for point in segment.trajectory {
                 // Adjust time to be cumulative across segments
-                var adjustedPoint = point
                 let adjusted = TrajectoryPoint(
                     time: point.time + timeOffset,
                     altitude: point.altitude,

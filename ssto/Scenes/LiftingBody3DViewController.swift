@@ -115,11 +115,11 @@ struct LiftingBody3DView: View {
                 addCargoBox()
                 updateGeometry()
             }
-            .onChange(of: coneAngle) { _ in updateGeometry() }
-            .onChange(of: flatTopPct) { _ in updateGeometry() }
-            .onChange(of: heightFactor) { _ in updateGeometry() }
-            .onChange(of: slopeCurve) { _ in updateGeometry() }
-            .onChange(of: zoomLevel) { _ in updateCameraZoom() }
+            .onChange(of: coneAngle) { updateGeometry() }
+            .onChange(of: flatTopPct) { updateGeometry() }
+            .onChange(of: heightFactor) { updateGeometry() }
+            .onChange(of: slopeCurve) { updateGeometry() }
+            .onChange(of: zoomLevel) { updateCameraZoom() }
 
             VStack {
                 // Header

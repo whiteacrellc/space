@@ -87,7 +87,21 @@ class FlightSimulator {
             propulsionManager.update(altitude: altitudeFeet, speed: speedMach)
 
             // Calculate forces
-            let thrust = propulsionManager.getThrust(altitude: altitudeFeet, speed: speedMach)
+            var thrust = propulsionManager.getThrust(altitude: altitudeFeet, speed: speedMach)
+            
+            // FLIGHT PLAN INTERPOLATION / GUIDANCE
+            // If we have exceeded target speed but not target altitude, throttle back to save fuel
+            // This simulates managing energy rather than just burning max thrust blindly
+            if v > targetV && h < targetH {
+                // We are fast but low. Coast up.
+                // Maintain enough thrust to overcome drag+gravity if possible, or just idle.
+                // For simplicity, cut throttle to 10% (idle)
+                thrust *= 0.1
+            } else if v > targetV * 1.1 {
+                 // Overspeed protection
+                 thrust *= 0.0
+            }
+            
             let drag = dragCalculator.calculateDrag(altitude: h, velocity: v)
             let gravity = PhysicsConstants.gravity(at: h)
             let mass = dryMass + fuelMass

@@ -27,7 +27,7 @@ class ThermalModel {
     }
 
     /// Calculate leading edge temperature due to aerodynamic heating
-    /// Uses the recovery temperature formula for high-speed flight
+    /// Uses the recovery temperature formula for high-speed flight, refined with radiative cooling.
     ///
     /// - Parameters:
     ///   - altitude: Altitude in meters
@@ -49,16 +49,39 @@ class ThermalModel {
         let gamma = 1.4 // ratio of specific heats for air
 
         let temperatureRatio = 1.0 + recoveryFactor * ((gamma - 1.0) / 2.0) * mach * mach
-        var recoveryTemperatureK = ambientTemp * temperatureRatio
+        let adiabaticWallTempK = ambientTemp * temperatureRatio
 
-        // Apply plane design heating rate multiplier
+        // Apply plane design heating rate multiplier (geometric concentration)
         // Sharper leading edges heat up faster
         let heatingMultiplier = planeDesign.heatingRateMultiplier()
-        let deltaT = recoveryTemperatureK - ambientTemp
-        recoveryTemperatureK = ambientTemp + deltaT * heatingMultiplier
+        let aeroDeltaT = (adiabaticWallTempK - ambientTemp) * heatingMultiplier
+        
+        // Refined Model: Radiative Equilibrium Approximation
+        // Real T_wall is lower than T_adiabatic because the surface radiates heat away.
+        // Q_in = h * (T_aw - T_w)
+        // Q_out = sigma * epsilon * T_w^4
+        // Equilibrium when Q_in = Q_out.
+        // We approximate this by reducing the effective delta T at high temperatures.
+        
+        // Empirical cooling factor: Radiation becomes dominant as T^4
+        // This curve approximates the equilibrium solution without solving the quartic
+        let radiativeCoolingFactor = 1.0 / (1.0 + pow(adiabaticWallTempK / 3000.0, 4.0))
+        
+        let finalTempK = ambientTemp + aeroDeltaT * radiativeCoolingFactor
 
         // Convert to Celsius
-        return recoveryTemperatureK - 273.15
+        return finalTempK - 273.15
+    }
+
+    /// Get thermal limit for a specific material type
+    static func getMaterialLimit(materialName: String) -> Double {
+        switch materialName {
+        case "Aluminum": return 150.0
+        case "Titanium": return 500.0
+        case "Inconel": return 700.0
+        case "Carbon-Carbon": return 1600.0
+        default: return baseMaxLeadingEdgeTemperature
+        }
     }
 
     /// Get atmospheric temperature at altitude in Kelvin

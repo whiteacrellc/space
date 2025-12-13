@@ -212,8 +212,12 @@ class GameManager {
         // Check if orbit was achieved
         let success = checkOrbitAchieved(segments: segments)
 
+        // Find max temperature encountered
+        let maxTempEncountered = segments.flatMap { $0.trajectory }.map { $0.temperature }.max() ?? 0.0
+        let tempLimit = ThermalModel.getMaxTemperature(for: currentPlaneDesign)
+
         // Calculate score
-        let score = calculateScore(fuel: totalFuel, time: totalTime, success: success)
+        let score = calculateScore(fuel: totalFuel, time: totalTime, success: success, maxTemp: maxTempEncountered, tempLimit: tempLimit)
 
         // Get final state
         let finalSegment = segments.last
@@ -244,22 +248,32 @@ class GameManager {
         return altitudeReached && speedReached
     }
 
-    /// Calculate score based on performance
-    private func calculateScore(fuel: Double, time: Double, success: Bool) -> Int {
+    /// Calculate score based on performance and design efficiency
+    private func calculateScore(fuel: Double, time: Double, success: Bool, maxTemp: Double, tempLimit: Double) -> Int {
         guard success else { return 0 }
 
         // Base score for success
         var score = 10000
 
-        // Fuel efficiency bonus (less fuel = higher score)
-        // Typical missions might use 20,000-40,000 liters
-        let fuelScore = max(0, Int(50000 - fuel))
+        // Fuel efficiency bonus (Critical for SSTO)
+        // Weight increased: Every liter saved is points.
+        let fuelScore = max(0, Int((50000 - fuel) * 2.0))
         score += fuelScore
 
         // Time bonus (faster = higher score)
-        // Typical missions might take 200-500 seconds
-        let timeScore = max(0, Int((1000 - time) * 2))
+        let timeScore = max(0, Int((1000 - time) * 5))
         score += timeScore
+        
+        // Thermal Safety Bonus (Reward distinct designs that manage heat well)
+        // If maxTemp is 100C below limit, +1000 pts.
+        let thermalMargin = tempLimit - maxTemp
+        if thermalMargin > 0 {
+            let safetyBonus = Int(thermalMargin * 10)
+            score += safetyBonus
+        } else {
+            // Penalty for cooking the ship (even if it survived the logic check)
+            score -= 5000
+        }
 
         return score
     }

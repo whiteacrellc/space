@@ -116,10 +116,12 @@ class DragCalculator {
             cd = baselineDragCoefficient * waveDragMultiplier
 
         } else {
-            // Hypersonic flow (Ma >= 5.0): Drag increases again
-            // Shock interactions and heating become dominant
-            let hypersonicFactor = 1.0 + (Ma - 5.0) / 15.0
-            cd = baselineDragCoefficient * 6.0 * hypersonicFactor
+            // Hypersonic flow (Ma >= 5.0): Drag Coefficient decreases asymptotically
+            // At high Mach, wave drag coefficient decreases (roughly 1/M^2 trend),
+            // but viscous interaction increases.
+            // We model a decay from the supersonic level (~6.0) down to a high-speed floor (~2.5).
+            let decay = exp(-(Ma - 5.0) / 10.0)
+            cd = baselineDragCoefficient * (2.5 + 3.5 * decay)
         }
 
         // Altitude effects: rarefied flow at extreme altitudes

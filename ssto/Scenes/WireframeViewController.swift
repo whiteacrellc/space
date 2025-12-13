@@ -349,12 +349,20 @@ class WireframeViewController: UIViewController {
         cameraNode.look(at: SCNVector3(0, 0, 0))
     }
 
+
+
     private func generateWireframe() {
-        // Use data from GameManager, but prioritize local shapeView for Side Profile if available
-        var profile = GameManager.shared.getSideProfile()
+        // Clear existing geometry nodes except axes and camera
+        wireframeNode?.removeFromParentNode()
+        payloadNode?.removeFromParentNode()
+        engineNode?.removeFromParentNode()
+        pilotNode?.removeFromParentNode()
         
+        // 1. Get Data from GameManager
+        // If local shapeView is set (from previous screen), use it to create a temporary profile
+        // Otherwise use the saved one
+        var profile = GameManager.shared.getSideProfile()
         if let shapeView = self.shapeView {
-            // Create profile from local shapeView state
             profile = SideProfileShape(
                 frontStart: SerializablePoint(from: shapeView.frontStartModel, isFixedX: true),
                 frontControl: SerializablePoint(from: shapeView.frontControlModel, isFixedX: false),
@@ -371,370 +379,401 @@ class WireframeViewController: UIViewController {
         }
         
         let planform = GameManager.shared.getTopViewPlanform()
-        let crossSectionPoints = GameManager.shared.getCrossSectionPoints()
-
-        // Parameters for mesh generation
-        let longitudinalSamples = 60  // Along the length
-        let circumferentialSamples = 32  // Around the circumference
+        let crossSection = GameManager.shared.getCrossSectionPoints()
         
-        // Generate the base cross-section shape from splines
-        let baseAirfoil = generateCrossSectionFromSpline(crossSectionPoints: crossSectionPoints, numSamples: circumferentialSamples)
-
-        // Calculate floor width fraction (span at the bottom of the cross-section)
-        // normalized Y ranges from ~-1 (top) to ~1 (bottom)
-        var minXAtBottom: Float = 1.0
-        var maxXAtBottom: Float = -1.0
+        // 2. Prepare Unit Cross Section (Normalized to [-1, 1] range)
+        // This gives us the shape of the rib (e.g., airfoil/fuselage section)
+        let unitShape = generateUnitCrossSection(from: crossSection, steps: 30)
         
-        // Use a threshold for "bottom"
-        let bottomThreshold: Float = 0.95
+        // 3. Generate Mesh Points
+        var meshPoints: [[SCNVector3]] = []
+        let numRibs = 40
         
-        for point in baseAirfoil {
-            if point.y > bottomThreshold {
-                if point.x < minXAtBottom { minXAtBottom = point.x }
-                if point.x > maxXAtBottom { maxXAtBottom = point.x }
+        // Determine X bounds
+        // Use the profile's extent as the primary length, but consider planform
+        let startX = min(planform.noseTip.x, profile.frontStart.x)
+        let endX = max(planform.tailLeft.x, profile.exhaustEnd.x)
+        
+        for i in 0...numRibs {
+            let t = Double(i) / Double(numRibs)
+            let x = startX + t * (endX - startX)
+            
+            // Get Dimensions at X
+            let halfWidth = getPlanformWidth(at: x, planform: planform) // Returns distance from centerline
+            let (zTop, zBottom) = getProfileHeight(at: x, profile: profile)
+            
+            // Safety check for dimensions
+            let height = max(0.1, zTop - zBottom)
+            let zCenter = (zTop + zBottom) / 2.0
+            let validHalfWidth = max(0.1, halfWidth)
+            
+            var ribPoints: [SCNVector3] = []
+            for unitPoint in unitShape {
+                // unitPoint.x is spanwise (-1 to 1)
+                // unitPoint.y is vertical (-1 to 1)
+                
+                let finalY = unitPoint.x * validHalfWidth
+                let finalZ = zCenter + (unitPoint.y * height / 2.0)
+                
+                ribPoints.append(SCNVector3(Float(x), Float(finalY), Float(finalZ)))
             }
+            meshPoints.append(ribPoints)
         }
         
-        // If no points found (sharp point?), default to a small fraction
-        var floorFraction: CGFloat = 0.2
-        if maxXAtBottom > minXAtBottom {
-            let floorWidthNormalized = CGFloat(maxXAtBottom - minXAtBottom)
-            // Normalized X is -1 to 1 (width 2). So fraction is width / 2.
-            floorFraction = floorWidthNormalized / 2.0
-        }
-
+        // 4. Create Geometry (Lines)
         var vertices: [SCNVector3] = []
         var indices: [Int32] = []
-
-        // Get the X extent from the side view (profile)
-        let startX = CGFloat(profile.topStart.x)
-        let endX = CGFloat(profile.topEnd.x)
-
-        // Generate vertices using NURBS-like interpolation
-        for i in 0..<longitudinalSamples {
-            let t = CGFloat(i) / CGFloat(longitudinalSamples - 1)
-            let currentX = startX + t * (endX - startX)
-
-            // Get cross-section data at this X position from side view logic
-            guard let crossSection = getCrossSectionAtFromProfile(x: currentX, profile: profile) else { continue }
-
-            // Get the width at this X position from top view planform
-            let halfWidth = getWidthFromPlanform(atX: currentX, planform: planform, fraction: t)
-
-            let centerY = crossSection.centerY
-            let halfHeight = crossSection.halfHeight
-
-            // Generate points around the circumference using the spline shape
-            for j in 0..<circumferentialSamples {
-                let sampleIdx = j
-                let point = baseAirfoil[sampleIdx % baseAirfoil.count]
-                
-                // Map spline shape to physical dimensions
-                let y = Float(point.x) * halfWidth
-                let z = Float(centerY) - Float(point.y) * halfHeight
-                
-                vertices.append(SCNVector3(Float(currentX), y, z))
-            }
-        }
-
-        // Generate wireframe indices
-        let pointsPerSection = baseAirfoil.count
         
-        for i in 0..<longitudinalSamples - 1 {
-            for j in 0..<pointsPerSection {
-                let nextJ = (j + 1) % pointsPerSection
-
-                let current = Int32(i * pointsPerSection + j)
-                let currentNext = Int32(i * pointsPerSection + nextJ)
-                let next = Int32((i + 1) * pointsPerSection + j)
-
-                // Circumferential lines (ring)
-                indices.append(contentsOf: [current, currentNext])
-
-                // Longitudinal lines (stringers)
+        // Flatten points and generate indices
+        for (ribIndex, rib) in meshPoints.enumerated() {
+            let ribStartIndex = Int32(vertices.count)
+            vertices.append(contentsOf: rib)
+            
+            // Draw Rib Loop (Cross-section)
+            for j in 0..<rib.count {
+                let current = ribStartIndex + Int32(j)
+                let next = ribStartIndex + Int32((j + 1) % rib.count)
                 indices.append(contentsOf: [current, next])
             }
+            
+            // Draw Stringers (Longitudinal lines connecting to previous rib)
+            if ribIndex > 0 {
+                let prevRibStartIndex = ribStartIndex - Int32(rib.count)
+                for j in 0..<rib.count {
+                    let current = ribStartIndex + Int32(j)
+                    let prev = prevRibStartIndex + Int32(j)
+                    indices.append(contentsOf: [prev, current])
+                }
+            }
         }
-
-        // Close the last circumferential ring
-        for j in 0..<pointsPerSection {
-            let nextJ = (j + 1) % pointsPerSection
-            let current = Int32((longitudinalSamples - 1) * pointsPerSection + j)
-            let currentNext = Int32((longitudinalSamples - 1) * pointsPerSection + nextJ)
-            indices.append(contentsOf: [current, currentNext])
-        }
-
+        
         // Center the geometry
         let (centeredVertices, centerOffset) = centerVerticesAndGetOffset(vertices)
-
-        // Create geometry
+        
+        // Create SCNGeometry
         let vertexSource = SCNGeometrySource(vertices: centeredVertices)
         let element = SCNGeometryElement(indices: indices, primitiveType: .line)
         let geometry = SCNGeometry(sources: [vertexSource], elements: [element])
-
-        // Apply teal wireframe material
+        
+        // Apply material
         let material = SCNMaterial()
-        material.diffuse.contents = UIColor.cyan  // Teal/cyan color
-        material.lightingModel = .constant  // Unlit for better wireframe visibility
+        material.diffuse.contents = UIColor.cyan
+        material.lightingModel = .constant
         geometry.firstMaterial = material
-
-        // Add to scene
-        wireframeNode?.removeFromParentNode()
+        
+        // Create Node
         wireframeNode = SCNNode(geometry: geometry)
-        wireframeNode!.scale = SCNVector3(0.5, 0.5, 0.5)  // Scale aircraft to 50%
+        wireframeNode!.scale = SCNVector3(0.5, 0.5, 0.5) // Scale down for view
+        
+        // Add components
+        addPayloadBox(centerOffset: centerOffset, profile: profile)
+        addEngineBox(centerOffset: centerOffset, profile: profile)
+        addPilotBox(centerOffset: centerOffset, profile: profile)
+        
         scnScene.rootNode.addChildNode(wireframeNode!)
-
-        // Add reference boxes
-        addPayloadBox()
-        addEngineBox(centerOffset: centerOffset, floorFraction: floorFraction)
-        addPilotBox()
+        
         addCoordinateAxes()
     }
     
-    // Adapted from LiftingBodyEngine
-    private func generateCrossSectionFromSpline(
-        crossSectionPoints: CrossSectionPoints,
-        numSamples: Int
-    ) -> [(x: Float, y: Float)] {
+    // MARK: - Helper Logic
 
-        var points: [(x: Float, y: Float)] = []
-        
-        // Canvas dimensions from SplineCalculator
-        let canvasHeight: CGFloat = 500.0
-        let centerY: CGFloat = 250.0  // Centerline from SplineCalculator
-        
-        let topCGPoints = crossSectionPoints.topPoints.map { $0.toCGPoint() }
-        let bottomCGPoints = crossSectionPoints.bottomPoints.map { $0.toCGPoint() }
+    /// Generate a normalized unit cross-section from control points
+    private func generateUnitCrossSection(from crossSection: CrossSectionPoints, steps: Int) -> [CGPoint] {
+        var unitShape: [CGPoint] = []
 
-        // Find X extent
-        let allX = topCGPoints.map { $0.x } + bottomCGPoints.map { $0.x }
-        let minX = allX.min() ?? 100.0
-        let maxX = allX.max() ?? 700.0
-        let xRange = maxX - minX
+        // Sample the top curve (right side, spanwise +1 to 0)
+        let topCurve = interpolateSpline(points: crossSection.topPoints.map { $0.toCGPoint() }, steps: steps)
 
-        // Top surface samples (Left to Right)
-        let topCount = numSamples / 2
-        for i in 0...topCount {
-            let t = CGFloat(i) / CGFloat(topCount)
-            let x = minX + t * xRange
-            
-            // Interpolate Y
-            let yValue = interpolateSpline(points: topCGPoints, atX: x)
-            
-            // Normalize
-            let normX = Float((x - minX) / xRange) * 2.0 - 1.0
-            let normY = Float((yValue - centerY) / 250.0) // Assuming 250 is half-height
-            
-            points.append((x: normX, y: normY))
+        // Sample the bottom curve (left side, spanwise 0 to -1)
+        let bottomCurve = interpolateSpline(points: crossSection.bottomPoints.map { $0.toCGPoint() }, steps: steps).reversed()
+
+        // Normalize to [-1, 1] spanwise and vertically
+        let allPoints = topCurve + bottomCurve
+        let minX = allPoints.map { $0.x }.min() ?? 0
+        let maxX = allPoints.map { $0.x }.max() ?? 1
+        let minY = allPoints.map { $0.y }.min() ?? 0
+        let maxY = allPoints.map { $0.y }.max() ?? 1
+
+        let rangeX = max(maxX - minX, 1)
+        let rangeY = max(maxY - minY, 1)
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
+
+        // Map top curve to spanwise [0, 1], vertical [-1, 1]
+        for point in topCurve {
+            let normalizedX = (point.x - centerX) / rangeX * 2.0  // Spanwise
+            let normalizedY = (point.y - centerY) / rangeY * 2.0  // Vertical
+            unitShape.append(CGPoint(x: normalizedX, y: normalizedY))
         }
-        
-        // Bottom surface samples (Right to Left)
-        let bottomCount = numSamples / 2
-        for i in 0...bottomCount {
-            let t = CGFloat(i) / CGFloat(bottomCount)
-            let x = maxX - t * xRange // Right to Left
-            
-            let yValue = interpolateSpline(points: bottomCGPoints, atX: x)
-            
-            let normX = Float((x - minX) / xRange) * 2.0 - 1.0
-            let normY = Float((yValue - centerY) / 250.0)
-            
-            if i == 0 { continue } // Skip first point (same as last top point)
-            
-            points.append((x: normX, y: normY))
+
+        // Map bottom curve to spanwise [-1, 0], vertical [-1, 1]
+        for point in bottomCurve {
+            let normalizedX = (point.x - centerX) / rangeX * 2.0  // Spanwise
+            let normalizedY = (point.y - centerY) / rangeY * 2.0  // Vertical
+            unitShape.append(CGPoint(x: normalizedX, y: normalizedY))
         }
-        
-        return points
+
+        return unitShape
     }
-    
-    // Helper for spline interpolation
-    private func interpolateSpline(points: [CGPoint], atX targetX: CGFloat) -> CGFloat {
-        var closestBefore: CGPoint?
-        var closestAfter: CGPoint?
 
-        for point in points {
-            if point.x <= targetX {
-                if closestBefore == nil || point.x > closestBefore!.x {
-                    closestBefore = point
-                }
-            }
-            if point.x >= targetX {
-                if closestAfter == nil || point.x < closestAfter!.x {
-                    closestAfter = point
-                }
+    /// Interpolate a spline curve through given points
+    private func interpolateSpline(points: [CGPoint], steps: Int) -> [CGPoint] {
+        guard points.count >= 2 else { return points }
+
+        var result: [CGPoint] = []
+
+        for i in 0..<points.count - 1 {
+            let p0 = points[max(i - 1, 0)]
+            let p1 = points[i]
+            let p2 = points[i + 1]
+            let p3 = points[min(i + 2, points.count - 1)]
+
+            let (cp1, cp2) = SplineCalculator.calculateControlPoints(p0: p0, p1: p1, p2: p2, p3: p3)
+
+            // Sample cubic Bezier curve
+            for t in 0..<steps {
+                let u = CGFloat(t) / CGFloat(steps)
+                let point = cubicBezier(t: u, p0: p1, p1: cp1, p2: cp2, p3: p2)
+                result.append(point)
             }
         }
 
-        if let before = closestBefore, let after = closestAfter {
-            if abs(after.x - before.x) < 0.001 { return before.y }
-            let t = (targetX - before.x) / (after.x - before.x)
-            return before.y + t * (after.y - before.y)
-        } else if let before = closestBefore {
-            return before.y
-        } else if let after = closestAfter {
-            return after.y
-        }
-        return 250.0
+        result.append(points.last!)
+        return result
     }
-    
-    private func getCrossSectionAtFromProfile(x: CGFloat, profile: SideProfileShape) -> (centerY: CGFloat, halfHeight: Float)? {
-        // Evaluate Bezier using profile points directly
-        // Top curve
-        guard let topY = evaluateQuadraticBezier(
-            p0: profile.topStart.toCGPoint(),
-            p1: profile.topControl.toCGPoint(),
-            p2: profile.topEnd.toCGPoint(),
-            atX: x
-        ) else { return nil }
 
-        // Bottom curve
-        var bottomY: CGFloat
+    /// Evaluate cubic Bezier curve at parameter t
+    private func cubicBezier(t: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint, p3: CGPoint) -> CGPoint {
+        let u = 1 - t
+        let tt = t * t
+        let uu = u * u
+        let uuu = uu * u
+        let ttt = tt * t
+
+        let x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x
+        let y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y
+
+        return CGPoint(x: x, y: y)
+    }
+
+    /// Get planform width (half-span) at given X position
+    private func getPlanformWidth(at x: Double, planform: TopViewPlanform) -> Double {
+        // The planform defines the left side (negative Y)
+        // We need to find the Y coordinate at the given X position
+        let points = [
+            planform.noseTip.toCGPoint(),
+            planform.frontControlLeft.toCGPoint(),
+            planform.midLeft.toCGPoint(),
+            planform.rearControlLeft.toCGPoint(),
+            planform.tailLeft.toCGPoint()
+        ]
+
+        // Find which segment contains x
+        for i in 0..<points.count - 1 {
+            let x1 = points[i].x
+            let x2 = points[i + 1].x
+
+            if x >= min(x1, x2) && x <= max(x1, x2) {
+                // Linear interpolation for simplicity
+                let t = (x - x1) / (x2 - x1)
+                let y = points[i].y + t * (points[i + 1].y - points[i].y)
+                return abs(y)  // Return absolute value (distance from centerline)
+            }
+        }
+
+        // If x is outside range, return edge values
+        if x < points.first!.x {
+            return abs(points.first!.y)
+        } else {
+            return abs(points.last!.y)
+        }
+    }
+
+    /// Get profile height (top and bottom Z) at given X position
+    private func getProfileHeight(at x: Double, profile: SideProfileShape) -> (Double, Double) {
+        // Bottom curve (fuselage floor)
+        let bottomZ: Double
+
+        let frontStart = profile.frontStart.toCGPoint()
+        let frontControl = profile.frontControl.toCGPoint()
         let frontEnd = profile.frontEnd.toCGPoint()
         let engineEnd = profile.engineEnd.toCGPoint()
+        let exhaustControl = profile.exhaustControl.toCGPoint()
+        let exhaustEnd = profile.exhaustEnd.toCGPoint()
 
-        if x < frontEnd.x {
-            bottomY = evaluateQuadraticBezier(
-                p0: profile.frontStart.toCGPoint(),
-                p1: profile.frontControl.toCGPoint(),
-                p2: frontEnd,
-                atX: x
-            ) ?? profile.frontStart.toCGPoint().y
+        // Determine which section x falls into for bottom curve
+        if x <= frontEnd.x {
+            // Front quadratic Bezier section
+            let t = (x - frontStart.x) / (frontEnd.x - frontStart.x)
+            bottomZ = solveQuadraticBezierY(t: max(0, min(1, t)), p0: frontStart, p1: frontControl, p2: frontEnd)
         } else if x <= engineEnd.x {
-            bottomY = frontEnd.y
+            // Engine bay (flat floor)
+            bottomZ = frontEnd.y
         } else {
-            bottomY = evaluateQuadraticBezier(
-                p0: engineEnd,
-                p1: profile.exhaustControl.toCGPoint(),
-                p2: profile.exhaustEnd.toCGPoint(),
-                atX: x
-            ) ?? profile.exhaustEnd.toCGPoint().y
+            // Exhaust quadratic Bezier section
+            let t = (x - engineEnd.x) / (exhaustEnd.x - engineEnd.x)
+            bottomZ = solveQuadraticBezierY(t: max(0, min(1, t)), p0: engineEnd, p1: exhaustControl, p2: exhaustEnd)
         }
 
-        let centerY = (topY + bottomY) / 2.0
-        let halfHeight = Float(abs(topY - bottomY) / 2.0)
+        // Top curve
+        let topStart = profile.topStart.toCGPoint()
+        let topControl = profile.topControl.toCGPoint()
+        let topEnd = profile.topEnd.toCGPoint()
 
-        return (centerY, halfHeight)
+        let t = (x - topStart.x) / (topEnd.x - topStart.x)
+        let topZ = solveQuadraticBezierY(t: max(0, min(1, t)), p0: topStart, p1: topControl, p2: topEnd)
+
+        return (topZ, bottomZ)
     }
 
+    /// Evaluate quadratic Bezier curve Y coordinate at parameter t
+    private func solveQuadraticBezierY(t: Double, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> Double {
+        let u = 1 - t
+        return u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y
+    }
+
+    /// Center vertices and return the offset used
     private func centerVerticesAndGetOffset(_ vertices: [SCNVector3]) -> ([SCNVector3], SCNVector3) {
-        guard !vertices.isEmpty else { return (vertices, SCNVector3Zero) }
+        guard !vertices.isEmpty else { return ([], SCNVector3Zero) }
 
-        var minX = Float.greatestFiniteMagnitude, maxX = -Float.greatestFiniteMagnitude
-        var minY = Float.greatestFiniteMagnitude, maxY = -Float.greatestFiniteMagnitude
-        var minZ = Float.greatestFiniteMagnitude, maxZ = -Float.greatestFiniteMagnitude
+        // Calculate bounds
+        var minX: Float = vertices[0].x
+        var maxX: Float = vertices[0].x
+        var minY: Float = vertices[0].y
+        var maxY: Float = vertices[0].y
+        var minZ: Float = vertices[0].z
+        var maxZ: Float = vertices[0].z
 
-        for v in vertices {
-            minX = min(minX, v.x); maxX = max(maxX, v.x)
-            minY = min(minY, v.y); maxY = max(maxY, v.y)
-            minZ = min(minZ, v.z); maxZ = max(maxZ, v.z)
+        for vertex in vertices {
+            minX = min(minX, vertex.x)
+            maxX = max(maxX, vertex.x)
+            minY = min(minY, vertex.y)
+            maxY = max(maxY, vertex.y)
+            minZ = min(minZ, vertex.z)
+            maxZ = max(maxZ, vertex.z)
         }
 
-        let centerX = (minX + maxX) / 2.0
-        let centerY = (minY + maxY) / 2.0
-        let centerZ = (minZ + maxZ) / 2.0
-        let offset = SCNVector3(centerX, centerY, centerZ)
+        // Calculate center offset
+        let centerOffset = SCNVector3(
+            (minX + maxX) / 2,
+            (minY + maxY) / 2,
+            (minZ + maxZ) / 2
+        )
 
-        let centered = vertices.map { SCNVector3($0.x - centerX, $0.y - centerY, $0.z - centerZ) }
-        return (centered, offset)
+        // Center vertices
+        let centeredVertices = vertices.map { vertex in
+            SCNVector3(
+                vertex.x - centerOffset.x,
+                vertex.y - centerOffset.y,
+                vertex.z - centerOffset.z
+            )
+        }
+
+        return (centeredVertices, centerOffset)
     }
 
-    private func addPayloadBox() {
-        // Payload box: 8m x 8m x 16m (Width x Height x Length)
-        // Position in the payload region (30-60% of length)
-
-        let box = SCNBox(width: 16.0, height: 8.0, length: 8.0, chamferRadius: 0.0)
-
+    private func addPayloadBox(centerOffset: SCNVector3, profile: SideProfileShape) {
+        // Payload box: 8m wide × 8m tall × 16m long
+        // Position in the payload region (middle of fuselage)
+        
+        let boxLength: CGFloat = 16.0
+        let boxWidth: CGFloat = 8.0
+        let boxHeight: CGFloat = 8.0
+        
+        let box = SCNBox(width: boxLength, height: boxWidth, length: boxHeight, chamferRadius: 0.0)
+        
         let material = SCNMaterial()
-        material.diffuse.contents = UIColor.red
-        material.emission.contents = UIColor.red.withAlphaComponent(0.3)
+        material.diffuse.contents = UIColor.green
         material.fillMode = .lines  // Wireframe
         material.lightingModel = .constant
         box.firstMaterial = material
-
+        
         payloadNode?.removeFromParentNode()
         payloadNode = SCNNode(geometry: box)
-        payloadNode!.position = SCNVector3(0, 0, 0)  // Centered
-        scnScene.rootNode.addChildNode(payloadNode!)
+        
+        // Position at middle of fuselage
+        let midX = (CGFloat(profile.frontStart.x) + CGFloat(profile.exhaustEnd.x)) / 2.0
+        
+        // Get floor height at this X
+        let (_, bottomZ) = getProfileHeight(at: Double(midX), profile: profile)
+        let zPos = CGFloat(bottomZ) + boxHeight / 2.0
+        
+        payloadNode!.position = SCNVector3(
+            Float(midX) - centerOffset.x,
+            0 - centerOffset.y,
+            Float(zPos) - centerOffset.z
+        )
+        
+        wireframeNode?.addChildNode(payloadNode!)
     }
-
-    private func addEngineBox(centerOffset: SCNVector3, floorFraction: CGFloat) {
-        // Get dimensions from design
-        let profile = GameManager.shared.getSideProfile()
-        let planform = GameManager.shared.getTopViewPlanform()
-
+    
+    private func addEngineBox(centerOffset: SCNVector3, profile: SideProfileShape) {
+        // Engine box positioned in engine bay
         let startX = CGFloat(profile.frontEnd.x)
         let engineLength = CGFloat(profile.engineLength)
         let midX = startX + engineLength / 2.0
-
-        // Calculate width at engine midpoint
-        // getWidthFromPlanform returns the MAX half-width of the fuselage at this X
-        let maxHalfWidth = getWidthFromPlanform(atX: midX, planform: planform, fraction: 0.5)
         
-        // Calculate the physical width at the floor (min Z)
-        // floorFraction is the ratio of floor_width / max_width based on the cross-section shape
-        let floorWidth = CGFloat(maxHalfWidth * 2.0) * floorFraction
+        // Dynamically size based on available space
+        let (_, bottomZ) = getProfileHeight(at: Double(midX), profile: profile)
+        let (topZ, _) = getProfileHeight(at: Double(midX), profile: profile)
         
-        // User Requirement: 90% of the width at min Z
-        let boxWidth = floorWidth * 0.9
-
-        let boxHeight: CGFloat = 3.0
-
-        // SCNBox(width, height, length) maps to (X, Y, Z) dimensions in SceneKit node space
-        // In our mapping: X=Longitudinal, Y=Spanwise(Width), Z=Vertical(Height)
-        // box.width = X size (Engine Length)
-        // box.height = Y size (Engine Width)
-        // box.length = Z size (Engine Height)
+        let availableHeight = CGFloat(topZ - bottomZ)
+        let boxHeight = min(6.0, availableHeight * 0.8) // Use up to 6m or 80% of height
+        let boxWidth: CGFloat = 8.0
+        
         let box = SCNBox(width: engineLength, height: boxWidth, length: boxHeight, chamferRadius: 0.0)
-
+        
         let material = SCNMaterial()
-        material.diffuse.contents = UIColor.blue // Solid blue
+        material.diffuse.contents = UIColor.blue
         material.lightingModel = .constant
         box.firstMaterial = material
-
+        
         engineNode?.removeFromParentNode()
         engineNode = SCNNode(geometry: box)
         
-        // Position:
-        // X: midX (center of engine along length)
-        // Y: 0 (centerline)
-        // Z: Sitting on the floor.
-        // The floor of the mesh corresponds to profile.frontEnd.y (in model coordinates).
-        // Since box origin is center, Z position = floorZ + height/2.
-        let lineZ = CGFloat(profile.frontEnd.y)
-        let zPos = lineZ + boxHeight / 2.0
+        // Position on the floor
+        let zPos = CGFloat(bottomZ) + boxHeight / 2.0
         
-        // Apply center offset to align with centered wireframe
         engineNode!.position = SCNVector3(
             Float(midX) - centerOffset.x,
             0 - centerOffset.y,
             Float(zPos) - centerOffset.z
         )
-
-        // Add to wireframeNode to inherit scale (0.5)
+        
         wireframeNode?.addChildNode(engineNode!)
-
-        print("Engine box added: \(String(format: "%.1f", engineLength))m (X) × \(String(format: "%.1f", boxWidth))m (Y) × 3.0m (Z)")
     }
-
-    private func addPilotBox() {
-        // Pilot box: Cockpit/crew compartment
-        // Dimensions: 8m wide × 4m tall × 4m long
-
-        let box = SCNBox(width: 8.0, height: 4.0, length: 4.0, chamferRadius: 0.0)
-
+    
+    private func addPilotBox(centerOffset: SCNVector3, profile: SideProfileShape) {
+        // Pilot box: Cockpit/crew compartment near the nose
+        let boxLength: CGFloat = 6.0
+        let boxWidth: CGFloat = 4.0
+        let boxHeight: CGFloat = 3.0
+        
+        let box = SCNBox(width: boxLength, height: boxWidth, length: boxHeight, chamferRadius: 0.0)
+        
         let material = SCNMaterial()
         material.diffuse.contents = UIColor.yellow
-        material.emission.contents = UIColor.yellow.withAlphaComponent(0.3)
         material.fillMode = .lines  // Wireframe
         material.lightingModel = .constant
         box.firstMaterial = material
-
+        
         pilotNode?.removeFromParentNode()
         pilotNode = SCNNode(geometry: box)
-        pilotNode!.position = SCNVector3(-35, 0, 0)  // Nose area
-        scnScene.rootNode.addChildNode(pilotNode!)
-
-        print("Pilot box added: 8m×4m×4m (W×H×L) at X=-35m in yellow wireframe")
+        
+        // Position near the nose (30 units aft of start)
+        let noseX = CGFloat(profile.frontStart.x) + 30.0
+        
+        // Get floor height at this specific X to ensuring it sits inside
+        let (_, bottomZ) = getProfileHeight(at: Double(noseX), profile: profile)
+        let zPos = CGFloat(bottomZ) + boxHeight / 2.0 + 1.0 // +1.0 buffer from floor
+        
+        pilotNode!.position = SCNVector3(
+            Float(noseX) - centerOffset.x,
+            0 - centerOffset.y,
+            Float(zPos) - centerOffset.z
+        )
+        
+        wireframeNode?.addChildNode(pilotNode!)
     }
 
     private func addCoordinateAxes() {
@@ -783,7 +822,6 @@ class WireframeViewController: UIViewController {
         axesNode!.addChildNode(zAxis)
 
         scnScene.rootNode.addChildNode(axesNode!)
-        print("Coordinate axes added with length: \(axisLength)m")
     }
 
     private func createAxis(
@@ -844,7 +882,7 @@ class WireframeViewController: UIViewController {
         text.firstMaterial?.lightingModel = .constant
 
         let textNode = SCNNode(geometry: text)
-        let fontSize: Float = 1.25 // Reduced from 5.0 (75% smaller)
+        let fontSize: Float = 1.25
         textNode.scale = SCNVector3(fontSize, fontSize, fontSize)
 
         let labelOffset = length + Float(arrowHeight) + fontSize * 3
@@ -863,129 +901,5 @@ class WireframeViewController: UIViewController {
         axisNode.addChildNode(textNode)
 
         return axisNode
-    }
-
-    private func getCrossSectionAt(x: CGFloat, from shapeView: ShapeView) -> (centerY: CGFloat, halfHeight: Float)? {
-        // Solve for top and bottom curves at position x
-
-        // Top curve: quadratic bezier from topStart through topControl to topEnd
-        guard let topY = evaluateQuadraticBezier(
-            p0: shapeView.topStartModel,
-            p1: shapeView.topControlModel,
-            p2: shapeView.topEndModel,
-            atX: x
-        ) else { return nil }
-
-        // Bottom curve: three segments (front, engine, exhaust)
-        var bottomY: CGFloat
-
-        if x < shapeView.frontEndModel.x {
-            // Front curve
-            bottomY = evaluateQuadraticBezier(
-                p0: shapeView.frontStartModel,
-                p1: shapeView.frontControlModel,
-                p2: shapeView.frontEndModel,
-                atX: x
-            ) ?? shapeView.frontStartModel.y
-        } else if x <= shapeView.engineEndModel.x {
-            // Engine section (flat)
-            bottomY = shapeView.frontEndModel.y
-        } else {
-            // Exhaust curve
-            bottomY = evaluateQuadraticBezier(
-                p0: shapeView.engineEndModel,
-                p1: shapeView.exhaustControlModel,
-                p2: shapeView.exhaustEndModel,
-                atX: x
-            ) ?? shapeView.exhaustEndModel.y
-        }
-
-        let centerY = (topY + bottomY) / 2.0
-        let halfHeight = Float(abs(topY - bottomY) / 2.0)
-
-        return (centerY, halfHeight)
-    }
-
-    private func getWidthFromPlanform(atX x: CGFloat, planform: TopViewPlanform, fraction: CGFloat) -> Float {
-        // Use the top view planform to determine width at this X position
-        // The planform defines the leading edge shape using Bezier curves
-
-        // Left side curves (we'll mirror for right side)
-        let noseTip = planform.noseTip.toCGPoint()
-        let frontControl = planform.frontControlLeft.toCGPoint()
-        let midLeft = planform.midLeft.toCGPoint()
-        let rearControl = planform.rearControlLeft.toCGPoint()
-        let tailLeft = planform.tailLeft.toCGPoint()
-
-        // Evaluate the left side width at this X position
-        var leftWidth: CGFloat = 0.0
-
-        // Front section: nose to mid
-        if x <= midLeft.x {
-            if let y = evaluateQuadraticBezier(p0: noseTip, p1: frontControl, p2: midLeft, atX: x) {
-                leftWidth = abs(y)  // Y is the lateral offset from centerline
-            }
-        }
-        // Rear section: mid to tail
-        else {
-            if let y = evaluateQuadraticBezier(p0: midLeft, p1: rearControl, p2: tailLeft, atX: x) {
-                leftWidth = abs(y)
-            }
-        }
-
-        // Ensure minimum width for payload bay (8m total width = 4m half-width)
-        if fraction >= 0.3 && fraction <= 0.6 {
-            leftWidth = max(leftWidth, 4.0)
-        }
-
-        // The total width is 2x the left width (symmetric)
-        // Return half-width for use in ellipse generation
-        return Float(leftWidth)
-    }
-
-    private func getWidthAt(x: CGFloat, totalLength: CGFloat, fraction: CGFloat) -> Float {
-        // Fallback method - use default taper
-        // Payload region (30-60% of length) should be at least 8m half-width
-        if fraction >= 0.3 && fraction <= 0.6 {
-            return max(Float(maxHeight) / 2.0, 4.0)  // At least 8m total width (4m half-width)
-        } else {
-            // Taper toward nose and tail
-            let distanceFromPayload = min(abs(fraction - 0.3), abs(fraction - 0.6))
-            let taperFactor = 1.0 - Float(distanceFromPayload) * 2.5
-            return max(2.0, Float(maxHeight) / 2.0 * taperFactor)
-        }
-    }
-
-    private func evaluateQuadraticBezier(p0: CGPoint, p1: CGPoint, p2: CGPoint, atX x: CGFloat) -> CGFloat? {
-        // Solve quadratic Bezier for parameter t where B(t).x = x
-        // B(t) = (1-t)²·P0 + 2(1-t)t·P1 + t²·P2
-
-        let a = p0.x - 2.0 * p1.x + p2.x
-        let b = 2.0 * (p1.x - p0.x)
-        let c = p0.x - x
-
-        // Solve at² + bt + c = 0
-        if abs(a) < 1e-6 {
-            // Linear case
-            if abs(b) < 1e-6 { return nil }
-            let t = -c / b
-            if t >= 0 && t <= 1 {
-                return (1.0 - t) * (1.0 - t) * p0.y + 2.0 * (1.0 - t) * t * p1.y + t * t * p2.y
-            }
-            return nil
-        }
-
-        let discriminant = b * b - 4.0 * a * c
-        if discriminant < 0 { return nil }
-
-        let sqrtDisc = sqrt(discriminant)
-        let t1 = (-b + sqrtDisc) / (2.0 * a)
-        let t2 = (-b - sqrtDisc) / (2.0 * a)
-
-        let t = (t1 >= 0 && t1 <= 1) ? t1 : t2
-        if t < 0 || t > 1 { return nil }
-
-        // Evaluate Y at this t
-        return (1.0 - t) * (1.0 - t) * p0.y + 2.0 * (1.0 - t) * t * p1.y + t * t * p2.y
     }
 }

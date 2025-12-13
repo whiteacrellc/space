@@ -255,6 +255,10 @@ class WireframeViewController: UIViewController {
 
     private func performLoad(name: String) {
         if GameManager.shared.loadDesign(name: name) {
+            // Clear the local shapeView so generateWireframe uses the loaded data from GameManager
+            self.shapeView = nil
+            self.topViewShape = nil
+
             showAlert(title: "Success", message: "Design '\(name)' loaded successfully")
             generateWireframe() // Refresh display with loaded design
         } else {

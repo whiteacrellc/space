@@ -11,6 +11,10 @@ class TopViewShapeView: UIView {
     var midRightModel = CGPoint.zero
     var frontControlRightModel = CGPoint.zero
 
+    // Wing parameters
+    var wingStartPosition: CGFloat = 0.67  // Fraction of fuselage length (0.0 to 1.0)
+    var wingSpan: CGFloat = 150.0          // Wing half-span from centerline
+
     // Canvas dimensions
     var canvasWidth: CGFloat = 0
     var canvasHeight: CGFloat = 0
@@ -52,6 +56,125 @@ class TopViewShapeView: UIView {
         UIColor.white.setStroke()
         path.lineWidth = 2
         path.stroke()
+
+        // Draw wings
+        drawWings()
+    }
+
+    private func drawWings() {
+        // Calculate wing start X position based on fuselage length
+        let fuselageLength = tailLeftModel.x - noseTipModel.x
+        let wingStartX = noseTipModel.x + (fuselageLength * wingStartPosition)
+
+        // Calculate fuselage width at wing start position (leading edge)
+        let fuselageWidthAtStart = getFuselageWidthAt(x: wingStartX)
+
+        // Calculate fuselage width at tail (trailing edge)
+        let wingTrailingX = tailLeftModel.x
+        let fuselageWidthAtEnd = getFuselageWidthAt(x: wingTrailingX)
+
+        // Wing leading edge - matches fuselage width exactly (no extension)
+        let wingLeadingEdgeLeft = CGPoint(x: wingStartX, y: -fuselageWidthAtStart)
+        let wingLeadingEdgeRight = CGPoint(x: wingStartX, y: fuselageWidthAtStart)
+
+        // Wing trailing edge - extends beyond fuselage by wingSpan
+        let wingTrailingEdgeLeft = CGPoint(x: wingTrailingX, y: -(fuselageWidthAtEnd + wingSpan))
+        let wingTrailingEdgeRight = CGPoint(x: wingTrailingX, y: (fuselageWidthAtEnd + wingSpan))
+
+        // Wing root at trailing edge (where wing meets fuselage at tail)
+        let wingRootRearLeft = CGPoint(x: wingTrailingX, y: -fuselageWidthAtEnd)
+        let wingRootRearRight = CGPoint(x: wingTrailingX, y: fuselageWidthAtEnd)
+
+        // Convert to view coordinates
+        let wlLeading = modelToView(wingLeadingEdgeLeft)
+        let wrLeading = modelToView(wingLeadingEdgeRight)
+        let wlTrailing = modelToView(wingTrailingEdgeLeft)
+        let wrTrailing = modelToView(wingTrailingEdgeRight)
+        let rootRearLeft = modelToView(wingRootRearLeft)
+        let rootRearRight = modelToView(wingRootRearRight)
+
+        // Draw left wing (triangular shape)
+        let leftWingPath = UIBezierPath()
+        leftWingPath.move(to: wlLeading)        // Leading edge at fuselage
+        leftWingPath.addLine(to: wlTrailing)     // Trailing edge tip
+        leftWingPath.addLine(to: rootRearLeft)   // Back to fuselage at tail
+        leftWingPath.close()
+
+        // Draw right wing (triangular shape)
+        let rightWingPath = UIBezierPath()
+        rightWingPath.move(to: wrLeading)        // Leading edge at fuselage
+        rightWingPath.addLine(to: wrTrailing)     // Trailing edge tip
+        rightWingPath.addLine(to: rootRearRight)  // Back to fuselage at tail
+        rightWingPath.close()
+
+        // Fill wings with semi-transparent green
+        UIColor(red: 0.2, green: 0.6, blue: 0.3, alpha: 0.5).setFill()
+        leftWingPath.fill()
+        rightWingPath.fill()
+
+        // Stroke wing outlines
+        UIColor(red: 0.2, green: 0.8, blue: 0.4, alpha: 1.0).setStroke()
+        leftWingPath.lineWidth = 2
+        rightWingPath.lineWidth = 2
+        leftWingPath.stroke()
+        rightWingPath.stroke()
+    }
+
+    // Calculate fuselage width at a given X position by interpolating the curve
+    private func getFuselageWidthAt(x: CGFloat) -> CGFloat {
+        // The fuselage shape is defined by quadratic Bezier curves
+        // We need to find the Y value (width) at the given X position
+
+        // Find which segment the X position falls into
+        if x <= frontControlLeftModel.x {
+            // Between nose and front control (first curve segment)
+            return interpolateBezierY(x: x,
+                                     p0: noseTipModel,
+                                     p1: frontControlLeftModel,
+                                     p2: midLeftModel)
+        } else if x <= rearControlLeftModel.x {
+            // Between front control and rear control (second curve segment)
+            return interpolateBezierY(x: x,
+                                     p0: frontControlLeftModel,
+                                     p1: midLeftModel,
+                                     p2: rearControlLeftModel)
+        } else {
+            // Between rear control and tail (third curve segment)
+            return interpolateBezierY(x: x,
+                                     p0: midLeftModel,
+                                     p1: rearControlLeftModel,
+                                     p2: tailLeftModel)
+        }
+    }
+
+    // Interpolate Y value on a quadratic Bezier curve at a given X position
+    private func interpolateBezierY(x: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> CGFloat {
+        // For quadratic Bezier: P(t) = (1-t)^2 * p0 + 2(1-t)t * p1 + t^2 * p2
+        // We need to find t such that P(t).x = x, then return P(t).y
+
+        // Use binary search to find t that gives us the desired x
+        var tMin: CGFloat = 0.0
+        var tMax: CGFloat = 1.0
+        var t: CGFloat = 0.5
+
+        for _ in 0..<20 { // 20 iterations should give good precision
+            let currentX = (1-t)*(1-t)*p0.x + 2*(1-t)*t*p1.x + t*t*p2.x
+
+            if abs(currentX - x) < 0.1 {
+                break
+            }
+
+            if currentX < x {
+                tMin = t
+            } else {
+                tMax = t
+            }
+            t = (tMin + tMax) / 2
+        }
+
+        // Calculate Y at this t value
+        let y = (1-t)*(1-t)*p0.y + 2*(1-t)*t*p1.y + t*t*p2.y
+        return abs(y) // Return absolute value since we're calculating width from centerline
     }
 
     func modelToView(_ point: CGPoint) -> CGPoint {
@@ -75,6 +198,12 @@ class TopViewDesignViewController: UIViewController {
     private var rearControlLeftView: DraggableControlPoint!
 
     private let noseShapeLabel = UILabel()
+
+    // Wing control sliders
+    private let wingPositionSlider = UISlider()
+    private let wingPositionLabel = UILabel()
+    private let wingSpanSlider = UISlider()
+    private let wingSpanLabel = UILabel()
 
     // Canvas dimensions
     private let canvasWidth: CGFloat = 800
@@ -173,23 +302,83 @@ class TopViewDesignViewController: UIViewController {
 
         // Nose shape label
         noseShapeLabel.text = "Adjust nose with controls"
-        noseShapeLabel.font = UIFont.systemFont(ofSize: 14)
+        noseShapeLabel.font = UIFont.systemFont(ofSize: 12)
         noseShapeLabel.textColor = .white
         footerView.addSubview(noseShapeLabel)
+
+        // Wing position slider
+        wingPositionLabel.text = "Wing Start: 67%"
+        wingPositionLabel.font = UIFont.systemFont(ofSize: 12)
+        wingPositionLabel.textColor = .cyan
+        wingPositionLabel.textAlignment = .left
+        footerView.addSubview(wingPositionLabel)
+
+        wingPositionSlider.minimumValue = 0.3
+        wingPositionSlider.maximumValue = 0.9
+        wingPositionSlider.value = 0.67
+        wingPositionSlider.minimumTrackTintColor = .cyan
+        wingPositionSlider.addTarget(self, action: #selector(wingPositionChanged(_:)), for: .valueChanged)
+        footerView.addSubview(wingPositionSlider)
+
+        // Wing span slider
+        wingSpanLabel.text = "Wing Span: 150"
+        wingSpanLabel.font = UIFont.systemFont(ofSize: 12)
+        wingSpanLabel.textColor = .green
+        wingSpanLabel.textAlignment = .left
+        footerView.addSubview(wingSpanLabel)
+
+        wingSpanSlider.minimumValue = 50
+        wingSpanSlider.maximumValue = 250
+        wingSpanSlider.value = 150
+        wingSpanSlider.minimumTrackTintColor = .green
+        wingSpanSlider.addTarget(self, action: #selector(wingSpanChanged(_:)), for: .valueChanged)
+        footerView.addSubview(wingSpanSlider)
 
         // Layout
         footerView.translatesAutoresizingMaskIntoConstraints = false
         noseShapeLabel.translatesAutoresizingMaskIntoConstraints = false
+        wingPositionLabel.translatesAutoresizingMaskIntoConstraints = false
+        wingPositionSlider.translatesAutoresizingMaskIntoConstraints = false
+        wingSpanLabel.translatesAutoresizingMaskIntoConstraints = false
+        wingSpanSlider.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             footerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             footerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             footerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            footerView.heightAnchor.constraint(equalToConstant: 60),
+            footerView.heightAnchor.constraint(equalToConstant: 80),
 
             noseShapeLabel.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 20),
-            noseShapeLabel.centerYAnchor.constraint(equalTo: footerView.centerYAnchor)
+            noseShapeLabel.topAnchor.constraint(equalTo: footerView.topAnchor, constant: 10),
+
+            wingPositionLabel.leadingAnchor.constraint(equalTo: noseShapeLabel.trailingAnchor, constant: 30),
+            wingPositionLabel.topAnchor.constraint(equalTo: footerView.topAnchor, constant: 10),
+            wingPositionLabel.widthAnchor.constraint(equalToConstant: 120),
+
+            wingPositionSlider.leadingAnchor.constraint(equalTo: wingPositionLabel.leadingAnchor),
+            wingPositionSlider.topAnchor.constraint(equalTo: wingPositionLabel.bottomAnchor, constant: 5),
+            wingPositionSlider.widthAnchor.constraint(equalToConstant: 200),
+
+            wingSpanLabel.leadingAnchor.constraint(equalTo: wingPositionSlider.trailingAnchor, constant: 30),
+            wingSpanLabel.topAnchor.constraint(equalTo: footerView.topAnchor, constant: 10),
+            wingSpanLabel.widthAnchor.constraint(equalToConstant: 120),
+
+            wingSpanSlider.leadingAnchor.constraint(equalTo: wingSpanLabel.leadingAnchor),
+            wingSpanSlider.topAnchor.constraint(equalTo: wingSpanLabel.bottomAnchor, constant: 5),
+            wingSpanSlider.widthAnchor.constraint(equalToConstant: 200)
         ])
+    }
+
+    @objc private func wingPositionChanged(_ slider: UISlider) {
+        shapeView.wingStartPosition = CGFloat(slider.value)
+        wingPositionLabel.text = String(format: "Wing Start: %.0f%%", slider.value * 100)
+        shapeView.setNeedsDisplay()
+    }
+
+    @objc private func wingSpanChanged(_ slider: UISlider) {
+        shapeView.wingSpan = CGFloat(slider.value)
+        wingSpanLabel.text = String(format: "Wing Span: %.0f", slider.value)
+        shapeView.setNeedsDisplay()
     }
 
     private func setupCanvas() {
@@ -237,12 +426,25 @@ class TopViewDesignViewController: UIViewController {
     }
 
     private func setupShapeModel() {
+        // Load existing planform from GameManager if available
+        let planform = GameManager.shared.getTopViewPlanform()
+
         // Model space: x from 0 (nose) to canvasWidth, y=0 centerline, positive right, negative left
-        shapeView.noseTipModel = CGPoint(x: 50, y: 0)  // Slightly offset for visibility
-        shapeView.midLeftModel = CGPoint(x: 300, y: -100)
-        shapeView.tailLeftModel = CGPoint(x: canvasWidth - 50, y: -50)
-        shapeView.frontControlLeftModel = CGPoint(x: 150, y: -30)
-        shapeView.rearControlLeftModel = CGPoint(x: 500, y: -80)
+        shapeView.noseTipModel = planform.noseTip.toCGPoint()
+        shapeView.midLeftModel = planform.midLeft.toCGPoint()
+        shapeView.tailLeftModel = planform.tailLeft.toCGPoint()
+        shapeView.frontControlLeftModel = planform.frontControlLeft.toCGPoint()
+        shapeView.rearControlLeftModel = planform.rearControlLeft.toCGPoint()
+
+        // Load wing parameters
+        shapeView.wingStartPosition = CGFloat(planform.wingStartPosition)
+        shapeView.wingSpan = CGFloat(planform.wingSpan)
+
+        // Update slider values
+        wingPositionSlider.value = Float(planform.wingStartPosition)
+        wingSpanSlider.value = Float(planform.wingSpan)
+        wingPositionLabel.text = String(format: "Wing Start: %.0f%%", planform.wingStartPosition * 100)
+        wingSpanLabel.text = String(format: "Wing Span: %.0f", planform.wingSpan)
     }
 
     private func setupControlPoints() {
@@ -325,7 +527,9 @@ class TopViewDesignViewController: UIViewController {
             frontControlLeft: SerializablePoint(from: shapeView.frontControlLeftModel, isFixedX: false),
             midLeft: SerializablePoint(from: shapeView.midLeftModel, isFixedX: false),
             rearControlLeft: SerializablePoint(from: shapeView.rearControlLeftModel, isFixedX: false),
-            tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false)
+            tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false),
+            wingStartPosition: Double(shapeView.wingStartPosition),
+            wingSpan: Double(shapeView.wingSpan)
         )
         GameManager.shared.setTopViewPlanform(planform)
 
@@ -339,7 +543,9 @@ class TopViewDesignViewController: UIViewController {
             frontControlLeft: SerializablePoint(from: shapeView.frontControlLeftModel, isFixedX: false),
             midLeft: SerializablePoint(from: shapeView.midLeftModel, isFixedX: false),
             rearControlLeft: SerializablePoint(from: shapeView.rearControlLeftModel, isFixedX: false),
-            tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false)
+            tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false),
+            wingStartPosition: Double(shapeView.wingStartPosition),
+            wingSpan: Double(shapeView.wingSpan)
         )
         GameManager.shared.setTopViewPlanform(planform)
 

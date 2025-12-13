@@ -310,27 +310,41 @@ class SSTODesignViewController: UIViewController {
     }
 
     private func setupShapeModel() {
-        // Initialize shape model coordinates (model space: origin at bottom-left)
-        // Front bottom curve starts at same position as top curve
-        let startX: CGFloat = 50
+        // Load existing profile from GameManager if available
+        let profile = GameManager.shared.getSideProfile()
         let startY: CGFloat = canvasHeight / 2  // Centerline
 
-        shapeView.topStartModel = CGPoint(x: startX, y: startY)
-        shapeView.frontStartModel = CGPoint(x: startX, y: startY)  // Same as top start
+        // Convert SerializablePoint to CGPoint - the profile stores Y relative to bottom (200 = centerline)
+        // We need to convert to view space where startY is the centerline
+        // In UIKit: Y increases downward, so startY - offset = above centerline, startY + offset = below centerline
+        let centerlineInModel: CGFloat = 200.0  // From the default profile
 
-        // Position control points outside the shape for better visibility
-        shapeView.frontControlModel = CGPoint(x: 150, y: startY - 120)  // Below shape
-        shapeView.frontEndModel = CGPoint(x: 250, y: startY - 100)
+        shapeView.frontStartModel = CGPoint(x: CGFloat(profile.frontStart.x),
+                                           y: startY + (CGFloat(profile.frontStart.y) - centerlineInModel))
+        shapeView.frontControlModel = CGPoint(x: CGFloat(profile.frontControl.x),
+                                             y: startY + (CGFloat(profile.frontControl.y) - centerlineInModel))
+        shapeView.frontEndModel = CGPoint(x: CGFloat(profile.frontEnd.x),
+                                         y: startY + (CGFloat(profile.frontEnd.y) - centerlineInModel))
+        shapeView.engineEndModel = CGPoint(x: CGFloat(profile.engineEnd.x),
+                                          y: startY + (CGFloat(profile.engineEnd.y) - centerlineInModel))
+        shapeView.exhaustControlModel = CGPoint(x: CGFloat(profile.exhaustControl.x),
+                                               y: startY + (CGFloat(profile.exhaustControl.y) - centerlineInModel))
+        shapeView.exhaustEndModel = CGPoint(x: CGFloat(profile.exhaustEnd.x),
+                                           y: startY + (CGFloat(profile.exhaustEnd.y) - centerlineInModel))
+        shapeView.topStartModel = CGPoint(x: CGFloat(profile.topStart.x),
+                                         y: startY + (CGFloat(profile.topStart.y) - centerlineInModel))
+        shapeView.topControlModel = CGPoint(x: CGFloat(profile.topControl.x),
+                                           y: startY + (CGFloat(profile.topControl.y) - centerlineInModel))
+        shapeView.topEndModel = CGPoint(x: CGFloat(profile.topEnd.x),
+                                       y: startY + (CGFloat(profile.topEnd.y) - centerlineInModel))
 
-        shapeView.engineLength = 240
-        // Engine section is always parallel to x-axis (same Y as frontEndModel)
-        shapeView.engineEndModel = CGPoint(x: 250 + shapeView.engineLength, y: shapeView.frontEndModel.y)
+        shapeView.engineLength = CGFloat(profile.engineLength)
 
-        shapeView.exhaustControlModel = CGPoint(x: 650, y: startY - 120)  // Below shape
-        shapeView.exhaustEndModel = CGPoint(x: canvasWidth - 50, y: startY)
-
-        shapeView.topControlModel = CGPoint(x: 400, y: startY + 120)  // Above shape
-        shapeView.topEndModel = CGPoint(x: canvasWidth - 50, y: startY)
+        // Update slider values
+        engineLengthSlider.value = Float(profile.engineLength)
+        maxHeightSlider.value = Float(profile.maxHeight)
+        engineLengthLabel.text = String(format: "Engine Length: %.0f", profile.engineLength)
+        maxHeightLabel.text = String(format: "Max Height: %.0f", profile.maxHeight)
     }
 
     private func setupControlPoints() {

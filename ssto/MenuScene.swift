@@ -70,68 +70,73 @@ class MenuScene: SKScene {
     }
     
     private func setupUI() {
-        // Title label
+        // Title label - adjusted for landscape
         titleLabel = SKLabelNode(text: "Welcome to Fly to Space")
         titleLabel?.fontName = "AvenirNext-Bold"
-        titleLabel?.fontSize = 32
+        titleLabel?.fontSize = min(32, size.height * 0.08)  // Scale with height, max 32
         titleLabel?.fontColor = .white
-        titleLabel?.position = CGPoint(x: size.width / 2, y: size.height * 0.75 + 20)
-        
+        titleLabel?.position = CGPoint(x: size.width / 2, y: size.height * 0.82)
+
         // Add a subtle glow effect
         titleLabel?.addGlow(radius: 8)
-        
+
         if let titleLabel = titleLabel {
             addChild(titleLabel)
         }
-        
-        // Calculate button positioning
-        let availableHeight = size.height * 0.55
-        let buttonSpacing: CGFloat = availableHeight / 5
-        let startY = size.height * 0.625
+
+        // Calculate button positioning - optimized for landscape
+        // Use fixed spacing that works well in landscape (typical height ~390-428px)
+        let buttonHeight: CGFloat = min(35, size.height * 0.09)
+        let buttonSpacing: CGFloat = buttonHeight + min(10, size.height * 0.025)
+
+        // Position buttons in the lower 70% of screen to avoid title overlap
+        // Start from 60% of height and go down
+        let startY = size.height * 0.60
 
         // New Game button
-        newGameButton = createButton(text: "New Game", position: CGPoint(x: size.width / 2, y: startY))
+        newGameButton = createButton(text: "New Game", position: CGPoint(x: size.width / 2, y: startY), height: buttonHeight)
         if let newGameButton = newGameButton {
             addChild(newGameButton)
         }
 
         // Plane Design button
-        planeDesignButton = createButton(text: "Plane Design", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing))
+        planeDesignButton = createButton(text: "Plane Design", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing), height: buttonHeight)
         if let planeDesignButton = planeDesignButton {
             addChild(planeDesignButton)
         }
 
         // Resume Game button
-        resumeGameButton = createButton(text: "Resume Game", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 2))
+        resumeGameButton = createButton(text: "Resume Game", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 2), height: buttonHeight)
         if let resumeGameButton = resumeGameButton {
             addChild(resumeGameButton)
         }
 
         // Exit button
-        exitButton = createButton(text: "Exit", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 3))
+        exitButton = createButton(text: "Exit", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 3), height: buttonHeight)
         if let exitButton = exitButton {
             addChild(exitButton)
         }
     }
-    
-    private func createButton(text: String, position: CGPoint) -> SKLabelNode {
+
+    private func createButton(text: String, position: CGPoint, height: CGFloat = 35) -> SKLabelNode {
         let button = SKLabelNode(text: text)
         button.fontName = "AvenirNext-Medium"
-        button.fontSize = 24
+        button.fontSize = min(20, height * 0.57)  // Scale font with button height
         button.fontColor = .white
         button.position = position
         button.name = text
         button.verticalAlignmentMode = .center
         button.horizontalAlignmentMode = .center
-        
-        // Add background for button
-        let background = SKShapeNode(rectOf: CGSize(width: 240, height: 40), cornerRadius: 8) // Widened slightly for longer text
+
+        // Add background for button - width scales with text, height is parameter
+        let buttonWidth = max(200, CGFloat(text.count) * button.fontSize * 0.6)
+        let background = SKShapeNode(rectOf: CGSize(width: buttonWidth, height: height), cornerRadius: 8)
         background.fillColor = UIColor(white: 0.2, alpha: 0.6)
         background.strokeColor = .white
         background.lineWidth = 2
         background.zPosition = -1
         button.addChild(background)
-        
+
         return button
     }
     

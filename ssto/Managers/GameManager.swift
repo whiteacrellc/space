@@ -39,12 +39,18 @@ struct TopViewPlanform: Codable {
     var rearControlLeft: SerializablePoint
     var tailLeft: SerializablePoint
 
+    // Wing parameters
+    var wingStartPosition: Double  // X position where wings start (0.0 to 1.0, representing fraction of fuselage length)
+    var wingSpan: Double            // Wing half-span (distance from centerline to wingtip)
+
     static let defaultPlanform = TopViewPlanform(
         noseTip: SerializablePoint(x: 50, y: 0, isFixedX: true),
         frontControlLeft: SerializablePoint(x: 150, y: -30, isFixedX: false),
         midLeft: SerializablePoint(x: 300, y: -100, isFixedX: false),
         rearControlLeft: SerializablePoint(x: 500, y: -80, isFixedX: false),
-        tailLeft: SerializablePoint(x: 750, y: -50, isFixedX: false)
+        tailLeft: SerializablePoint(x: 750, y: -50, isFixedX: false),
+        wingStartPosition: 0.67,     // Start at 2/3 back
+        wingSpan: 150.0              // Default wing span
     )
 }
 

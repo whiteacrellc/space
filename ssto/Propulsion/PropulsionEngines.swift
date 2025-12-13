@@ -48,8 +48,8 @@ class JetEngine: PropulsionSystem {
         
         let thrustPerEngine = baseThrustPerEngine * altitudeFactor * ramFactor * tempFactor
         
-        // Decay above Mach 3
-        let highMachFactor = max(0.0, 1.0 - (mach - 3.0) * 2.0) // Sharp dropoff
+        // Decay above Mach 3.2
+        let highMachFactor = max(0.0, 1.0 - (mach - 3.2) * 2.0) // Sharp dropoff after Mach 3.2
         
         return thrustPerEngine * Double(engineCount) * highMachFactor
     }
@@ -499,7 +499,7 @@ class ScramjetEngine: PropulsionSystem {
         let thrust = specificThrust * airMassFlowRate
         
         // Activation factor with smoother transition
-        let activationFactor = 1.0 / (1.0 + exp(-(mach - 5.5) / 0.5)) // Sigmoid for smooth ramp
+        let activationFactor = 1.0 / (1.0 + exp(-(mach - 4.5) / 0.5)) // Sigmoid for smooth ramp, starts earlier
         
         return thrust * activationFactor
     }
@@ -548,10 +548,10 @@ class RocketEngine: PropulsionSystem {
     // Typical oxidizer-to-fuel ratio: 2.36:1 by mass (updated from searches)
     private let oxidizerToFuelRatio = 2.36
     
-    // Base sea-level values based on typical LOX/RP-1 engine (e.g., similar to Merlin 1D)
+    // Base sea-level values based on advanced LOX/RP-1 engine
     private let seaLevelThrust = 845000.0 // 845 kN
-    private let seaLevelIsp = 282.0 // seconds
-    private let vacuumIsp = 311.0 // seconds
+    private let seaLevelIsp = 300.0 // seconds (Boosted for SSTO feasibility)
+    private let vacuumIsp = 345.0 // seconds (Boosted for SSTO feasibility)
     
     // Atmospheric pressure at sea level (Pa)
     private let P0 = 101325.0

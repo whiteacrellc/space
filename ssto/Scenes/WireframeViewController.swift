@@ -15,6 +15,9 @@ class WireframeViewController: UIViewController {
     private var engineNode: SCNNode?
     private var pilotNode: SCNNode?
     private var axesNode: SCNNode?
+    private var volumeLabel: UILabel?
+    private var instructionLabel: UILabel?
+    private var infoContainerView: UIView?
 
     // Gesture tracking
     private var lastPanLocation: CGPoint = .zero
@@ -26,6 +29,7 @@ class WireframeViewController: UIViewController {
         super.viewDidLoad()
         setupScene()
         setupHeader()
+        setupInfoPanel()
         setupGestures()
         generateWireframe()
         updateCameraPosition()
@@ -87,13 +91,6 @@ class WireframeViewController: UIViewController {
         loadButton.addTarget(self, action: #selector(loadButtonTapped), for: .touchUpInside)
         headerView.addSubview(loadButton)
 
-        let instructionLabel = UILabel()
-        instructionLabel.text = "Drag: Rotate"
-        instructionLabel.font = UIFont.systemFont(ofSize: 14)
-        instructionLabel.textColor = .cyan
-        instructionLabel.textAlignment = .right
-        headerView.addSubview(instructionLabel)
-
         // Zoom Controls
         var zoomInConfig = UIButton.Configuration.filled()
         zoomInConfig.title = "+"
@@ -120,7 +117,6 @@ class WireframeViewController: UIViewController {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         saveButton.translatesAutoresizingMaskIntoConstraints = false
         loadButton.translatesAutoresizingMaskIntoConstraints = false
-        instructionLabel.translatesAutoresizingMaskIntoConstraints = false
         zoomInButton.translatesAutoresizingMaskIntoConstraints = false
         zoomOutButton.translatesAutoresizingMaskIntoConstraints = false
 
@@ -151,12 +147,67 @@ class WireframeViewController: UIViewController {
             zoomOutButton.trailingAnchor.constraint(equalTo: zoomInButton.leadingAnchor, constant: -10),
             zoomOutButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
             zoomOutButton.widthAnchor.constraint(equalToConstant: 40),
-            zoomOutButton.heightAnchor.constraint(equalToConstant: 40),
-
-            // Instruction label to the left of zoom buttons
-            instructionLabel.trailingAnchor.constraint(equalTo: zoomOutButton.leadingAnchor, constant: -20),
-            instructionLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor)
+            zoomOutButton.heightAnchor.constraint(equalToConstant: 40)
         ])
+    }
+
+    private func setupInfoPanel() {
+        // Info container in lower left
+        let container = UIView()
+        container.backgroundColor = UIColor(red: 0.1, green: 0.1, blue: 0.15, alpha: 0.8)
+        container.layer.cornerRadius = 8
+        view.addSubview(container)
+        infoContainerView = container
+
+        // Instruction label
+        instructionLabel = UILabel()
+        instructionLabel?.text = "Drag: Rotate"
+        instructionLabel?.font = UIFont.systemFont(ofSize: 14)
+        instructionLabel?.textColor = .cyan
+        instructionLabel?.textAlignment = .left
+        if let instructionLabel = instructionLabel {
+            container.addSubview(instructionLabel)
+        }
+
+        // Volume label
+        volumeLabel = UILabel()
+        volumeLabel?.text = "Volume: 0.0 m³"
+        volumeLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        volumeLabel?.textColor = .yellow
+        volumeLabel?.textAlignment = .left
+        if let volumeLabel = volumeLabel {
+            container.addSubview(volumeLabel)
+        }
+
+        // Layout
+        container.translatesAutoresizingMaskIntoConstraints = false
+        instructionLabel?.translatesAutoresizingMaskIntoConstraints = false
+        volumeLabel?.translatesAutoresizingMaskIntoConstraints = false
+
+        var constraints = [
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            container.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            container.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            container.heightAnchor.constraint(equalToConstant: 60)
+        ]
+
+        if let instructionLabel = instructionLabel {
+            constraints.append(contentsOf: [
+                instructionLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                instructionLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+                instructionLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+            ])
+        }
+
+        if let volumeLabel = volumeLabel {
+            constraints.append(contentsOf: [
+                volumeLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                volumeLabel.topAnchor.constraint(equalTo: instructionLabel!.bottomAnchor, constant: 4),
+                volumeLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+            ])
+        }
+
+        NSLayoutConstraint.activate(constraints)
     }
 
     @objc private func doneButtonTapped() {
@@ -387,11 +438,11 @@ class WireframeViewController: UIViewController {
         
         // 2. Prepare Unit Cross Section (Normalized to [-1, 1] range)
         // This gives us the shape of the rib (e.g., airfoil/fuselage section)
-        let unitShape = generateUnitCrossSection(from: crossSection, steps: 30)
-        
+        let unitShape = generateUnitCrossSection(from: crossSection, steps: 5)  // Doubled for more Y-axis detail
+
         // 3. Generate Mesh Points
         var meshPoints: [[SCNVector3]] = []
-        let numRibs = 40
+        let numRibs = 40  // Halved for fewer X-axis lines
         
         // Determine X bounds
         // Use the profile's extent as the primary length, but consider planform
@@ -475,10 +526,77 @@ class WireframeViewController: UIViewController {
         addPilotBox(centerOffset: centerOffset, profile: profile)
         
         scnScene.rootNode.addChildNode(wireframeNode!)
-        
+
         addCoordinateAxes()
+
+        // Calculate and display volume
+        calculateAndDisplayVolume(meshPoints: meshPoints, planform: planform, profile: profile)
     }
-    
+
+    private func calculateAndDisplayVolume(meshPoints: [[SCNVector3]], planform: TopViewPlanform, profile: SideProfileShape) {
+        // Get aircraft length in meters from planform
+        let aircraftLengthMeters = planform.aircraftLength
+
+        // Calculate canvas units to meters conversion
+        let startX = min(planform.noseTip.x, profile.frontStart.x)
+        let endX = max(planform.tailLeft.x, profile.exhaustEnd.x)
+        let aircraftLengthCanvas = endX - startX
+        let metersPerUnit = aircraftLengthMeters / aircraftLengthCanvas
+
+        // Calculate volume by integrating cross-sectional areas
+        var totalVolume: Double = 0.0
+
+        for i in 0..<meshPoints.count - 1 {
+            // Get cross-sections at adjacent ribs
+            let section1 = meshPoints[i]
+            let section2 = meshPoints[i + 1]
+
+            // Calculate cross-sectional area using shoelace formula
+            let area1 = calculateCrossSectionArea(section: section1)
+            let area2 = calculateCrossSectionArea(section: section2)
+
+            // Average area for this segment
+            let avgArea = (area1 + area2) / 2.0
+
+            // Distance between sections in canvas units
+            let dx = abs(Double(section2[0].x - section1[0].x))
+
+            // Volume of this segment (in canvas units cubed)
+            let segmentVolume = avgArea * dx
+
+            totalVolume += segmentVolume
+        }
+
+        // Convert from canvas units³ to meters³
+        let conversionFactor = metersPerUnit * metersPerUnit * metersPerUnit
+        let volumeInMeters = totalVolume * conversionFactor
+
+        // Update the volume label
+        DispatchQueue.main.async { [weak self] in
+            self?.volumeLabel?.text = String(format: "Volume: %.1f m³", volumeInMeters)
+        }
+    }
+
+    /// Calculate cross-sectional area using shoelace formula (2D polygon area)
+    private func calculateCrossSectionArea(section: [SCNVector3]) -> Double {
+        guard section.count >= 3 else { return 0.0 }
+
+        var area: Double = 0.0
+
+        // Use Y-Z plane for cross-section (X is along length)
+        for i in 0..<section.count {
+            let j = (i + 1) % section.count
+            let yi = Double(section[i].y)
+            let zi = Double(section[i].z)
+            let yj = Double(section[j].y)
+            let zj = Double(section[j].z)
+
+            area += yi * zj - yj * zi
+        }
+
+        return abs(area / 2.0)
+    }
+
     // MARK: - Helper Logic
 
     /// Generate a normalized unit cross-section from control points
@@ -562,35 +680,65 @@ class WireframeViewController: UIViewController {
 
     /// Get planform width (half-span) at given X position
     private func getPlanformWidth(at x: Double, planform: TopViewPlanform) -> Double {
-        // The planform defines the left side (negative Y)
-        // We need to find the Y coordinate at the given X position
-        let points = [
-            planform.noseTip.toCGPoint(),
-            planform.frontControlLeft.toCGPoint(),
-            planform.midLeft.toCGPoint(),
-            planform.rearControlLeft.toCGPoint(),
-            planform.tailLeft.toCGPoint()
-        ]
+        // The planform is defined by quadratic Bezier curves (matching TopViewShapeView)
+        // Curve 1: noseTip -> midLeft (control: frontControlLeft)
+        // Curve 2: midLeft -> tailLeft (control: rearControlLeft)
 
-        // Find which segment contains x
-        for i in 0..<points.count - 1 {
-            let x1 = points[i].x
-            let x2 = points[i + 1].x
+        let noseTip = planform.noseTip.toCGPoint()
+        let frontControlLeft = planform.frontControlLeft.toCGPoint()
+        let midLeft = planform.midLeft.toCGPoint()
+        let rearControlLeft = planform.rearControlLeft.toCGPoint()
+        let tailLeft = planform.tailLeft.toCGPoint()
 
-            if x >= min(x1, x2) && x <= max(x1, x2) {
-                // Linear interpolation for simplicity
-                let t = (x - x1) / (x2 - x1)
-                let y = points[i].y + t * (points[i + 1].y - points[i].y)
-                return abs(y)  // Return absolute value (distance from centerline)
-            }
-        }
-
-        // If x is outside range, return edge values
-        if x < points.first!.x {
-            return abs(points.first!.y)
+        // Determine which curve segment contains x
+        if x <= midLeft.x {
+            // First curve: noseTip -> midLeft
+            let y = interpolatePlanformBezierY(x: CGFloat(x),
+                                              p0: noseTip,
+                                              p1: frontControlLeft,
+                                              p2: midLeft)
+            return abs(y)
+        } else if x <= tailLeft.x {
+            // Second curve: midLeft -> tailLeft
+            let y = interpolatePlanformBezierY(x: CGFloat(x),
+                                              p0: midLeft,
+                                              p1: rearControlLeft,
+                                              p2: tailLeft)
+            return abs(y)
         } else {
-            return abs(points.last!.y)
+            // Beyond tail
+            return abs(tailLeft.y)
         }
+    }
+
+    // Interpolate Y value on a quadratic Bezier curve at a given X position
+    private func interpolatePlanformBezierY(x: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> CGFloat {
+        // For quadratic Bezier: P(t) = (1-t)^2 * p0 + 2(1-t)t * p1 + t^2 * p2
+        // We need to find t such that P(t).x = x, then return P(t).y
+
+        // Use binary search to find t that gives us the desired x
+        var tMin: CGFloat = 0.0
+        var tMax: CGFloat = 1.0
+        var t: CGFloat = 0.5
+
+        for _ in 0..<20 { // 20 iterations should give good precision
+            let currentX = (1-t)*(1-t)*p0.x + 2*(1-t)*t*p1.x + t*t*p2.x
+
+            if abs(currentX - x) < 0.1 {
+                break
+            }
+
+            if currentX < x {
+                tMin = t
+            } else {
+                tMax = t
+            }
+            t = (tMin + tMax) / 2
+        }
+
+        // Calculate Y at this t value
+        let y = (1-t)*(1-t)*p0.y + 2*(1-t)*t*p1.y + t*t*p2.y
+        return y
     }
 
     /// Get profile height (top and bottom Z) at given X position

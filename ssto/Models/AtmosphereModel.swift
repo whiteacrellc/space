@@ -25,6 +25,39 @@ class AtmosphereModel {
     static let basePressures: [Double] = [101325.0, 22632.63439302289, 5475.157308245899, 868.0881576113087, 110.91901929163438, 66.94711499880606, 3.9570957497490675, 0.3734621450621543]  // Pa
     
     static let lapseRates: [Double] = [-0.0065, 0.0, 0.0010, 0.0028, 0.0, -0.0028, -0.0020]  // K/m
+    static let gamma: Double = 1.4
+    
+    private static func getLayerIndex(at altitude: Double) -> Int {
+        var layer = baseAltitudes.count - 2
+        for i in 0..<baseAltitudes.count - 1 {
+            if altitude < baseAltitudes[i + 1] {
+                layer = i
+                break
+            }
+        }
+        return layer
+    }
+    
+    static func temperature(at altitudeMeters: Double) -> Double {
+        if altitudeMeters < 0 { return baseTemperatures[0] }
+        
+        let layer = getLayerIndex(at: altitudeMeters)
+        let hb = baseAltitudes[layer]
+        let tb = baseTemperatures[layer]
+        let lb = lapseRates[layer]
+        let dh = altitudeMeters - hb
+        
+        if altitudeMeters >= baseAltitudes.last! {
+            return baseTemperatures.last!
+        }
+        
+        return tb + lb * dh
+    }
+    
+    static func speedOfSound(at altitudeMeters: Double) -> Double {
+        let t = temperature(at: altitudeMeters)
+        return sqrt(gamma * Rs * t)
+    }
     
     static func atmosphericDensity(at altitudeMeters: Double) -> Double {
         if altitudeMeters < 0 {

@@ -186,7 +186,7 @@ class TopViewShapeView: UIView {
     }
 }
 
-class TopViewDesignViewController: UIViewController {
+class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
     private let headerView = UIView()
     private let footerView = UIView()
     private let canvasContainerView = UIView()
@@ -204,6 +204,12 @@ class TopViewDesignViewController: UIViewController {
     private let wingPositionLabel = UILabel()
     private let wingSpanSlider = UISlider()
     private let wingSpanLabel = UILabel()
+
+    // Length and area displays
+    private let lengthTextField = UITextField()
+    private let lengthLabel = UILabel()
+    private let wingAreaLabel = UILabel()
+    private var aircraftLength: CGFloat = 70.0  // meters
 
     // Canvas dimensions
     private let canvasWidth: CGFloat = 800
@@ -273,11 +279,37 @@ class TopViewDesignViewController: UIViewController {
         let sideViewButton = UIButton(configuration: sideViewButtonConfig, primaryAction: UIAction(handler: { _ in self.sideViewButtonTapped() }))
         headerView.addSubview(sideViewButton)
 
+        // Length input (upper left)
+        lengthLabel.text = "Length (m):"
+        lengthLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        lengthLabel.textColor = .white
+        headerView.addSubview(lengthLabel)
+
+        lengthTextField.text = "70.0"
+        lengthTextField.font = UIFont.systemFont(ofSize: 14, weight: .bold)
+        lengthTextField.textColor = .yellow
+        lengthTextField.backgroundColor = UIColor.white.withAlphaComponent(0.1)
+        lengthTextField.textAlignment = .center
+        lengthTextField.keyboardType = .decimalPad
+        lengthTextField.borderStyle = .roundedRect
+        lengthTextField.delegate = self
+        lengthTextField.addTarget(self, action: #selector(lengthChanged), for: .editingChanged)
+        headerView.addSubview(lengthTextField)
+
+        // Wing area display
+        wingAreaLabel.text = "Wing Area: 0.0 m²"
+        wingAreaLabel.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        wingAreaLabel.textColor = .cyan
+        headerView.addSubview(wingAreaLabel)
+
         // Layout
         headerView.translatesAutoresizingMaskIntoConstraints = false
         doneButton.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         sideViewButton.translatesAutoresizingMaskIntoConstraints = false
+        lengthLabel.translatesAutoresizingMaskIntoConstraints = false
+        lengthTextField.translatesAutoresizingMaskIntoConstraints = false
+        wingAreaLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             headerView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -287,6 +319,17 @@ class TopViewDesignViewController: UIViewController {
 
             doneButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
             doneButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+
+            // Length controls in upper left (after done button)
+            lengthLabel.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 30),
+            lengthLabel.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 8),
+
+            lengthTextField.leadingAnchor.constraint(equalTo: lengthLabel.trailingAnchor, constant: 5),
+            lengthTextField.centerYAnchor.constraint(equalTo: lengthLabel.centerYAnchor),
+            lengthTextField.widthAnchor.constraint(equalToConstant: 60),
+
+            wingAreaLabel.leadingAnchor.constraint(equalTo: lengthLabel.leadingAnchor),
+            wingAreaLabel.topAnchor.constraint(equalTo: lengthLabel.bottomAnchor, constant: 4),
 
             titleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
@@ -372,13 +415,56 @@ class TopViewDesignViewController: UIViewController {
     @objc private func wingPositionChanged(_ slider: UISlider) {
         shapeView.wingStartPosition = CGFloat(slider.value)
         wingPositionLabel.text = String(format: "Wing Start: %.0f%%", slider.value * 100)
+        updateWingArea()
         shapeView.setNeedsDisplay()
     }
 
     @objc private func wingSpanChanged(_ slider: UISlider) {
         shapeView.wingSpan = CGFloat(slider.value)
         wingSpanLabel.text = String(format: "Wing Span: %.0f", slider.value)
+        updateWingArea()
         shapeView.setNeedsDisplay()
+    }
+
+    @objc private func lengthChanged() {
+        if let text = lengthTextField.text, let length = Double(text), length > 0 {
+            aircraftLength = CGFloat(length)
+            updateWingArea()
+        }
+    }
+
+    private func updateWingArea() {
+        // Calculate wing area in square meters
+        // Convert canvas units to meters
+        let metersPerUnit = aircraftLength / canvasWidth
+
+        // Calculate wing start and end X positions in canvas units
+        let fuselageLength = shapeView.tailLeftModel.x - shapeView.noseTipModel.x
+        let wingStartX = shapeView.noseTipModel.x + (fuselageLength * shapeView.wingStartPosition)
+        let wingTrailingX = shapeView.tailLeftModel.x
+
+        // Wing chord length in canvas units
+        let wingChordCanvas = wingTrailingX - wingStartX
+
+        // Wing span in canvas units (this is the extension beyond fuselage at trailing edge)
+        let wingSpanCanvas = shapeView.wingSpan
+
+        // Convert to meters
+        let wingChordMeters = wingChordCanvas * metersPerUnit
+        let wingSpanMeters = wingSpanCanvas * metersPerUnit
+
+        // Each wing is a triangle: Area = 0.5 * base * height
+        // Total area for both wings = 2 * (0.5 * chord * span) = chord * span
+        let totalWingArea = wingChordMeters * wingSpanMeters
+
+        wingAreaLabel.text = String(format: "Wing Area: %.1f m²", totalWingArea)
+    }
+
+    // MARK: - UITextFieldDelegate
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
     }
 
     private func setupCanvas() {
@@ -439,12 +525,17 @@ class TopViewDesignViewController: UIViewController {
         // Load wing parameters
         shapeView.wingStartPosition = CGFloat(planform.wingStartPosition)
         shapeView.wingSpan = CGFloat(planform.wingSpan)
+        aircraftLength = CGFloat(planform.aircraftLength)
 
-        // Update slider values
+        // Update slider values and text fields
         wingPositionSlider.value = Float(planform.wingStartPosition)
         wingSpanSlider.value = Float(planform.wingSpan)
         wingPositionLabel.text = String(format: "Wing Start: %.0f%%", planform.wingStartPosition * 100)
         wingSpanLabel.text = String(format: "Wing Span: %.0f", planform.wingSpan)
+        lengthTextField.text = String(format: "%.1f", planform.aircraftLength)
+
+        // Calculate and display initial wing area
+        updateWingArea()
     }
 
     private func setupControlPoints() {
@@ -529,7 +620,8 @@ class TopViewDesignViewController: UIViewController {
             rearControlLeft: SerializablePoint(from: shapeView.rearControlLeftModel, isFixedX: false),
             tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false),
             wingStartPosition: Double(shapeView.wingStartPosition),
-            wingSpan: Double(shapeView.wingSpan)
+            wingSpan: Double(shapeView.wingSpan),
+            aircraftLength: Double(aircraftLength)
         )
         GameManager.shared.setTopViewPlanform(planform)
 
@@ -545,7 +637,8 @@ class TopViewDesignViewController: UIViewController {
             rearControlLeft: SerializablePoint(from: shapeView.rearControlLeftModel, isFixedX: false),
             tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false),
             wingStartPosition: Double(shapeView.wingStartPosition),
-            wingSpan: Double(shapeView.wingSpan)
+            wingSpan: Double(shapeView.wingSpan),
+            aircraftLength: Double(aircraftLength)
         )
         GameManager.shared.setTopViewPlanform(planform)
 

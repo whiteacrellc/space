@@ -42,6 +42,34 @@ struct TopViewPlanform: Codable {
     // Wing parameters
     var wingStartPosition: Double  // X position where wings start (0.0 to 1.0, representing fraction of fuselage length)
     var wingSpan: Double            // Wing half-span (distance from centerline to wingtip)
+    var aircraftLength: Double      // Total aircraft length in meters
+
+    // Custom decoding to handle old saves without aircraftLength
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        noseTip = try container.decode(SerializablePoint.self, forKey: .noseTip)
+        frontControlLeft = try container.decode(SerializablePoint.self, forKey: .frontControlLeft)
+        midLeft = try container.decode(SerializablePoint.self, forKey: .midLeft)
+        rearControlLeft = try container.decode(SerializablePoint.self, forKey: .rearControlLeft)
+        tailLeft = try container.decode(SerializablePoint.self, forKey: .tailLeft)
+        wingStartPosition = try container.decodeIfPresent(Double.self, forKey: .wingStartPosition) ?? 0.67
+        wingSpan = try container.decodeIfPresent(Double.self, forKey: .wingSpan) ?? 150.0
+        aircraftLength = try container.decodeIfPresent(Double.self, forKey: .aircraftLength) ?? 70.0
+    }
+
+    // Standard init
+    init(noseTip: SerializablePoint, frontControlLeft: SerializablePoint, midLeft: SerializablePoint,
+         rearControlLeft: SerializablePoint, tailLeft: SerializablePoint,
+         wingStartPosition: Double, wingSpan: Double, aircraftLength: Double) {
+        self.noseTip = noseTip
+        self.frontControlLeft = frontControlLeft
+        self.midLeft = midLeft
+        self.rearControlLeft = rearControlLeft
+        self.tailLeft = tailLeft
+        self.wingStartPosition = wingStartPosition
+        self.wingSpan = wingSpan
+        self.aircraftLength = aircraftLength
+    }
 
     static let defaultPlanform = TopViewPlanform(
         noseTip: SerializablePoint(x: 50, y: 0, isFixedX: true),
@@ -50,7 +78,8 @@ struct TopViewPlanform: Codable {
         rearControlLeft: SerializablePoint(x: 500, y: -80, isFixedX: false),
         tailLeft: SerializablePoint(x: 750, y: -50, isFixedX: false),
         wingStartPosition: 0.67,     // Start at 2/3 back
-        wingSpan: 150.0              // Default wing span
+        wingSpan: 150.0,             // Default wing span
+        aircraftLength: 70.0         // Default length in meters
     )
 }
 
@@ -120,6 +149,17 @@ class GameManager {
 
     private init() {
         // Singleton
+        // Load "Tom" save file as default if it exists
+        if let data = UserDefaults.standard.data(forKey: "savedDesign_Tom"),
+           let bundle = try? JSONDecoder().decode(AircraftDesignBundle.self, from: data) {
+            currentSideProfile = bundle.sideProfile
+            currentTopViewPlanform = bundle.topViewPlanform
+            currentPlaneDesign = bundle.planeDesign
+            currentCrossSectionPoints = bundle.crossSectionPoints
+            print("Loaded 'Tom' design as default")
+        } else {
+            print("No 'Tom' save found, using built-in defaults")
+        }
     }
 
     /// Start a new mission with a fresh flight plan
@@ -320,15 +360,51 @@ class GameManager {
         )
 
         let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
         guard let data = try? encoder.encode(bundle) else {
             print("Failed to encode design bundle")
             return false
         }
 
+        // Save to UserDefaults (always)
         UserDefaults.standard.set(data, forKey: "savedDesign_\(name)")
         print("Design '\(name)' saved successfully")
+
+        // In debug builds, also write to Desktop as JSON file
+        #if DEBUG
+        writeDebugJSONToDesktop(name: name, data: data)
+        #endif
+
         return true
     }
+
+    #if DEBUG
+    /// Write design JSON to Desktop for debugging (debug builds only)
+    private func writeDebugJSONToDesktop(name: String, data: Data) {
+        let fileManager = FileManager.default
+
+        // Get Desktop path
+        guard let desktopURL = fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first else {
+            print("Could not find Desktop directory")
+            return
+        }
+
+        // Create filename with timestamp
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = dateFormatter.string(from: Date())
+        let filename = "ssto_\(name)_\(timestamp).json"
+        let fileURL = desktopURL.appendingPathComponent(filename)
+
+        do {
+            try data.write(to: fileURL)
+            print("DEBUG: Design exported to \(fileURL.path)")
+        } catch {
+            print("DEBUG: Failed to write JSON file: \(error)")
+        }
+    }
+    #endif
 
     /// Load a saved aircraft design by name
     /// - Parameter name: The name of the design to load

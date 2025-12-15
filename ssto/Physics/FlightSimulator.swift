@@ -35,7 +35,6 @@ class FlightSimulator {
         self.dryMass = dryMass
         self.planeDesign = planeDesign
         self.dragCalculator = DragCalculator(
-            referenceArea: referenceArea,
             baselineDragCoefficient: dragCoefficient,
             planeDesign: planeDesign
         )

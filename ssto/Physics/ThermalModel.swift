@@ -11,23 +11,40 @@ class ThermalModel {
 
     // Aircraft thermal limits (baseline for default design)
     static let baseMaxLeadingEdgeTemperature = 600.0 // °C
+    static let maxSafeTemp = 600.0 // °C (User required constant)
     static let baseSustainedTemperature = 550.0 // °C (warning threshold)
 
     // Ambient temperature at sea level
     private static let seaLevelTemperatureC = 15.0 // °C
+    private static let stefanBoltzmann = 5.67e-8
+    private static let emissivity = 0.85
+    private static let noseRadius = 0.1 // meters, baseline
 
     /// Get maximum temperature limit for a given plane design
     static func getMaxTemperature(for design: PlaneDesign) -> Double {
-        return baseMaxLeadingEdgeTemperature * design.thermalLimitMultiplier()
+        return maxSafeTemp * design.thermalLimitMultiplier()
     }
 
     /// Get sustained temperature threshold for a given plane design
     static func getSustainedTemperature(for design: PlaneDesign) -> Double {
         return baseSustainedTemperature * design.thermalLimitMultiplier()
     }
+    
+    /// Calculate leading edge temperature (Convenience method for Feet/Mach)
+    /// - Parameters:
+    ///   - altitude: Altitude in Feet
+    ///   - speed: Speed in Mach
+    /// - Returns: Temperature in Celsius
+    static func calculateTemperature(altitude: Double, speed: Double) -> Double {
+        let altitudeMeters = altitude * PhysicsConstants.feetToMeters
+        let speedOfSound = AtmosphereModel.speedOfSound(at: altitudeMeters)
+        let velocityMps = speed * speedOfSound
+        
+        return calculateLeadingEdgeTemperature(altitude: altitudeMeters, velocity: velocityMps)
+    }
 
     /// Calculate leading edge temperature due to aerodynamic heating
-    /// Uses the recovery temperature formula for high-speed flight, refined with radiative cooling.
+    /// Uses the Sutton-Graves correlation for stagnation point heat flux and balances with radiative cooling.
     ///
     /// - Parameters:
     ///   - altitude: Altitude in meters
@@ -35,39 +52,36 @@ class ThermalModel {
     ///   - planeDesign: Aircraft design parameters (affects heating rate)
     /// - Returns: Leading edge temperature in Celsius
     static func calculateLeadingEdgeTemperature(altitude: Double, velocity: Double, planeDesign: PlaneDesign = PlaneDesign.defaultDesign) -> Double {
-        // Get atmospheric temperature at altitude
-        let ambientTemp = getAtmosphericTemperature(altitude: altitude)
+        // Get atmospheric conditions
+        let ambientTempK = AtmosphereModel.temperature(at: altitude)
+        let density = AtmosphereModel.atmosphericDensity(at: altitude)
 
-        // Calculate Mach number
-        let speedOfSound = calculateSpeedOfSound(temperatureK: ambientTemp)
-        let mach = velocity / speedOfSound
-
-        // Recovery temperature formula
-        // T_recovery = T_ambient * (1 + r * (γ-1)/2 * M^2)
-        // where r is recovery factor (≈ 0.9 for turbulent boundary layer)
-        let recoveryFactor = 0.9
-        let gamma = 1.4 // ratio of specific heats for air
-
-        let temperatureRatio = 1.0 + recoveryFactor * ((gamma - 1.0) / 2.0) * mach * mach
-        let adiabaticWallTempK = ambientTemp * temperatureRatio
-
-        // Apply plane design heating rate multiplier (geometric concentration)
-        // Sharper leading edges heat up faster
-        let heatingMultiplier = planeDesign.heatingRateMultiplier()
-        let aeroDeltaT = (adiabaticWallTempK - ambientTemp) * heatingMultiplier
+        // Sutton-Graves approximation for convective heat flux (Stagnation Point)
+        // q_dot = k * sqrt(rho / R_n) * V^3
+        // k approx 1.74e-4 for Earth atmosphere (metric units)
+        let k_sutton = 1.74e-4
+        let heatingMultiplier = planeDesign.heatingRateMultiplier() // 1.0 for default, higher for sharp nose
+        let effectiveRadius = noseRadius / heatingMultiplier // Sharp nose = small radius = high heat
         
-        // Refined Model: Radiative Equilibrium Approximation
-        // Real T_wall is lower than T_adiabatic because the surface radiates heat away.
-        // Q_in = h * (T_aw - T_w)
-        // Q_out = sigma * epsilon * T_w^4
-        // Equilibrium when Q_in = Q_out.
-        // We approximate this by reducing the effective delta T at high temperatures.
+        let q_aero = k_sutton * sqrt(density / effectiveRadius) * pow(velocity, 3)
         
-        // Empirical cooling factor: Radiation becomes dominant as T^4
-        // This curve approximates the equilibrium solution without solving the quartic
-        let radiativeCoolingFactor = 1.0 / (1.0 + pow(adiabaticWallTempK / 3000.0, 4.0))
+        // Radiative Cooling: q_rad = epsilon * sigma * (T_wall^4 - T_ambient^4)
+        // Equilibrium: q_aero = q_rad
+        // T_wall^4 = (q_aero / (epsilon * sigma)) + T_ambient^4
+        // T_wall = ( ... )^0.25
         
-        let finalTempK = ambientTemp + aeroDeltaT * radiativeCoolingFactor
+        let t_ambient_4 = pow(ambientTempK, 4)
+        let t_wall_4 = (q_aero / (emissivity * stefanBoltzmann)) + t_ambient_4
+        let t_wall_K = pow(t_wall_4, 0.25)
+        
+        // Safety clamp: Adiabatic wall temperature is the theoretical max limit
+        // (if no radiation occurred). T_wall cannot exceed T_adiabatic.
+        // T_adiabatic ~ T_ambient * (1 + 0.2 * M^2)
+        let speedOfSound = AtmosphereModel.speedOfSound(at: altitude)
+        let mach = velocity / max(1.0, speedOfSound)
+        let t_adiabatic_K = ambientTempK * (1.0 + 0.2 * mach * mach)
+        
+        let finalTempK = min(t_wall_K, t_adiabatic_K)
 
         // Convert to Celsius
         return finalTempK - 273.15
@@ -82,30 +96,6 @@ class ThermalModel {
         case "Carbon-Carbon": return 1600.0
         default: return baseMaxLeadingEdgeTemperature
         }
-    }
-
-    /// Get atmospheric temperature at altitude in Kelvin
-    private static func getAtmosphericTemperature(altitude: Double) -> Double {
-        let temperatureK: Double
-
-        if altitude < 11000 {
-            // Troposphere: linear temperature decrease
-            temperatureK = 288.15 - 0.0065 * altitude
-        } else if altitude < 20000 {
-            // Lower stratosphere: constant temperature
-            temperatureK = 216.65
-        } else {
-            // Upper stratosphere: temperature increases slightly
-            temperatureK = 216.65 + 0.001 * (altitude - 20000)
-        }
-
-        return max(180.0, temperatureK) // Minimum realistic temperature
-    }
-
-    /// Calculate speed of sound at given temperature
-    private static func calculateSpeedOfSound(temperatureK: Double) -> Double {
-        // a = sqrt(γ * R * T)
-        return sqrt(1.4 * 287.0 * temperatureK)
     }
 
     /// Check if current flight conditions exceed thermal limits

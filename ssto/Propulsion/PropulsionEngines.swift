@@ -17,6 +17,7 @@ class JetEngine: PropulsionSystem {
     let name = "Jet"
     let machRange = 0.0...3.2  // J58 engine operates up to Mach 3.2
     let altitudeRange = 0.0...85000.0 // feet
+    let maxOperatingTemperature = 450.0 // °C (Compressor inlet limit)
     
     // Number of J58 engines (calculated based on aircraft needs)
     private var engineCount: Int = 2
@@ -223,6 +224,7 @@ class RamjetEngine: PropulsionSystem {
     let name = "Ramjet"
     let machRange = 2.5...5.5 // Adjusted for more accurate operational range
     let altitudeRange = 30000.0...90000.0 // feet, refined
+    let maxOperatingTemperature = 2200.0 // °C (Combustor material limit)
     
     // Air mass flow rate (kg/s) - typical for this class of ramjet
     private let airMassFlowRate = 50.0
@@ -476,6 +478,7 @@ class ScramjetEngine: PropulsionSystem {
     let name = "Scramjet"
     let machRange = 5.0...12.0 // Adjusted for more realistic operational range
     let altitudeRange = 70000.0...150000.0 // feet, tightened for accuracy
+    let maxOperatingTemperature = 3000.0 // °C (Active cooling limit)
     
     // Air mass flow rate (kg/s) - typical for scramjet
     private let airMassFlowRate = 40.0
@@ -542,6 +545,7 @@ class RocketEngine: PropulsionSystem {
     let name = "Rocket"
     let machRange = 0.0...30.0 // Can operate at any speed
     let altitudeRange = 0.0...400000.0 // To orbit and beyond
+    let maxOperatingTemperature = 5000.0 // °C (Not air-breathing limited)
     
     // Rocket propellant characteristics
     // Uses liquid oxygen (LOX) as oxidizer with kerosene-type fuel (RP-1)

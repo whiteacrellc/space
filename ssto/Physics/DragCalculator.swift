@@ -64,6 +64,18 @@ class DragCalculator {
     }
 
     /**
+     Get the drag coefficient at specified Mach number and altitude.
+
+     - Parameters:
+       - mach: Mach number
+       - altitude: Altitude in meters
+     - Returns: Drag coefficient (Cd)
+     */
+    func getCd(mach: Double, altitude: Double) -> Double {
+        return getDragCoefficient(Ma: mach, altitude_m: altitude)
+    }
+
+    /**
      Estimates the Drag Coefficient (Cd) of a streamlined aircraft based on Mach number and altitude.
 
      Aircraft drag varies significantly across flight regimes, with transonic drag rise

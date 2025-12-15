@@ -1,14 +1,14 @@
 //
-//  Fly_To_SpaceTests.swift
+//  sstoTests.swift
 //  sstoTests
 //
 //  Created by tom whittaker on 11/25/25.
 //
 
 import Testing
-@testable import Fly_To_Space
+@testable import ssto
 
-struct Fly_To_SpaceTests {
+struct sstoTests {
 
     @Test func example() async throws {
         // Write your test here and use APIs like `#expect(...)` to check expected conditions.

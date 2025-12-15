@@ -501,20 +501,44 @@ class SSTODesignViewController: UIViewController {
 
     @objc private func doneButtonTapped() {
         // Save the current design to GameManager
+        // Convert view coordinates back to model coordinates
+        let startY: CGFloat = canvasHeight / 2  // Centerline in view space
+        let centerlineInModel: CGFloat = 200.0  // Centerline in model space
+
+        func viewToModelPoint(_ point: CGPoint, isFixedX: Bool) -> SerializablePoint {
+            let modelY = centerlineInModel + (point.y - startY)
+            return SerializablePoint(x: Double(point.x), y: Double(modelY), isFixedX: isFixedX)
+        }
+
         let profile = SideProfileShape(
-            frontStart: SerializablePoint(from: shapeView.frontStartModel, isFixedX: true),
-            frontControl: SerializablePoint(from: shapeView.frontControlModel, isFixedX: false),
-            frontEnd: SerializablePoint(from: shapeView.frontEndModel, isFixedX: false),
-            engineEnd: SerializablePoint(from: shapeView.engineEndModel, isFixedX: false),
-            exhaustControl: SerializablePoint(from: shapeView.exhaustControlModel, isFixedX: false),
-            exhaustEnd: SerializablePoint(from: shapeView.exhaustEndModel, isFixedX: true),
-            topStart: SerializablePoint(from: shapeView.topStartModel, isFixedX: true),
-            topControl: SerializablePoint(from: shapeView.topControlModel, isFixedX: false),
-            topEnd: SerializablePoint(from: shapeView.topEndModel, isFixedX: true),
+            frontStart: viewToModelPoint(shapeView.frontStartModel, isFixedX: true),
+            frontControl: viewToModelPoint(shapeView.frontControlModel, isFixedX: false),
+            frontEnd: viewToModelPoint(shapeView.frontEndModel, isFixedX: false),
+            engineEnd: viewToModelPoint(shapeView.engineEndModel, isFixedX: false),
+            exhaustControl: viewToModelPoint(shapeView.exhaustControlModel, isFixedX: false),
+            exhaustEnd: viewToModelPoint(shapeView.exhaustEndModel, isFixedX: true),
+            topStart: viewToModelPoint(shapeView.topStartModel, isFixedX: true),
+            topControl: viewToModelPoint(shapeView.topControlModel, isFixedX: false),
+            topEnd: viewToModelPoint(shapeView.topEndModel, isFixedX: true),
             engineLength: Double(shapeView.engineLength),
             maxHeight: Double(maxHeightSlider.value)
         )
         GameManager.shared.setSideProfile(profile)
+
+        // Log the settings for default value reference
+        print("========== SIDE VIEW SETTINGS ==========")
+        print("frontStart: SerializablePoint(x: \(profile.frontStart.x), y: \(profile.frontStart.y), isFixedX: true)")
+        print("frontControl: SerializablePoint(x: \(profile.frontControl.x), y: \(profile.frontControl.y), isFixedX: false)")
+        print("frontEnd: SerializablePoint(x: \(profile.frontEnd.x), y: \(profile.frontEnd.y), isFixedX: false)")
+        print("engineEnd: SerializablePoint(x: \(profile.engineEnd.x), y: \(profile.engineEnd.y), isFixedX: false)")
+        print("exhaustControl: SerializablePoint(x: \(profile.exhaustControl.x), y: \(profile.exhaustControl.y), isFixedX: false)")
+        print("exhaustEnd: SerializablePoint(x: \(profile.exhaustEnd.x), y: \(profile.exhaustEnd.y), isFixedX: true)")
+        print("topStart: SerializablePoint(x: \(profile.topStart.x), y: \(profile.topStart.y), isFixedX: true)")
+        print("topControl: SerializablePoint(x: \(profile.topControl.x), y: \(profile.topControl.y), isFixedX: false)")
+        print("topEnd: SerializablePoint(x: \(profile.topEnd.x), y: \(profile.topEnd.y), isFixedX: true)")
+        print("engineLength: \(profile.engineLength)")
+        print("maxHeight: \(profile.maxHeight)")
+        print("========================================")
 
         dismiss(animated: true, completion: nil)
     }

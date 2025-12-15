@@ -625,6 +625,18 @@ class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
         )
         GameManager.shared.setTopViewPlanform(planform)
 
+        // Log the settings for default value reference
+        print("========== TOP VIEW SETTINGS ==========")
+        print("noseTip: SerializablePoint(x: \(planform.noseTip.x), y: \(planform.noseTip.y), isFixedX: true)")
+        print("frontControlLeft: SerializablePoint(x: \(planform.frontControlLeft.x), y: \(planform.frontControlLeft.y), isFixedX: false)")
+        print("midLeft: SerializablePoint(x: \(planform.midLeft.x), y: \(planform.midLeft.y), isFixedX: false)")
+        print("rearControlLeft: SerializablePoint(x: \(planform.rearControlLeft.x), y: \(planform.rearControlLeft.y), isFixedX: false)")
+        print("tailLeft: SerializablePoint(x: \(planform.tailLeft.x), y: \(planform.tailLeft.y), isFixedX: false)")
+        print("wingStartPosition: \(planform.wingStartPosition)")
+        print("wingSpan: \(planform.wingSpan)")
+        print("aircraftLength: \(planform.aircraftLength)")
+        print("=======================================")
+
         dismiss(animated: true, completion: nil)
     }
 

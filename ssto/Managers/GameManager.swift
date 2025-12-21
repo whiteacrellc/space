@@ -101,13 +101,13 @@ struct SideProfileShape: Codable {
         frontStart: SerializablePoint(x: 50, y: 200, isFixedX: true),
         frontControl: SerializablePoint(x: 150, y: 80, isFixedX: false),
         frontEnd: SerializablePoint(x: 250, y: 100, isFixedX: false),
-        engineEnd: SerializablePoint(x: 490, y: 100, isFixedX: false),
+        engineEnd: SerializablePoint(x: 375, y: 100, isFixedX: false),
         exhaustControl: SerializablePoint(x: 650, y: 80, isFixedX: false),
         exhaustEnd: SerializablePoint(x: 750, y: 200, isFixedX: true),
         topStart: SerializablePoint(x: 50, y: 200, isFixedX: true),
         topControl: SerializablePoint(x: 400, y: 320, isFixedX: false),
         topEnd: SerializablePoint(x: 750, y: 200, isFixedX: true),
-        engineLength: 240,
+        engineLength: 125,
         maxHeight: 120
     )
 }

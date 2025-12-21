@@ -370,8 +370,8 @@ class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
         wingSpanLabel.textAlignment = .left
         footerView.addSubview(wingSpanLabel)
 
-        wingSpanSlider.minimumValue = 50
-        wingSpanSlider.maximumValue = 250
+        wingSpanSlider.minimumValue = 40
+        wingSpanSlider.maximumValue = 150
         wingSpanSlider.value = 150
         wingSpanSlider.minimumTrackTintColor = .green
         wingSpanSlider.addTarget(self, action: #selector(wingSpanChanged(_:)), for: .valueChanged)

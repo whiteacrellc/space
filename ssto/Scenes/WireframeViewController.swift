@@ -3,7 +3,7 @@ import SceneKit
 
 class WireframeViewController: UIViewController {
 
-    var shapeView: ShapeView?  // Side profile (fuselage cross-section)
+    var shapeView: SideProfileShapeView?  // Side profile (fuselage cross-section)
     var topViewShape: TopViewShapeView?  // Top view (planform/leading edge)
     var maxHeight: CGFloat = 120.0
 
@@ -541,30 +541,31 @@ class WireframeViewController: UIViewController {
         // Otherwise use the saved one
         var profile = GameManager.shared.getSideProfile()
         if let shapeView = self.shapeView {
-            // Convert view coordinates to model coordinates
-            // The shapeView uses view space where Y increases downward
-            // Model space has Y=200 as centerline
+            // Convert view model coordinates to saved model coordinates
+            // This matches the logic in SSTODesignViewController.saveToGameManager()
             let canvasHeight: CGFloat = 400.0  // Standard canvas height from SSTODesignViewController
-            let startY: CGFloat = canvasHeight / 2  // Centerline in view space
-            let centerlineInModel: CGFloat = 200.0  // Centerline in model space
+            let viewCenterY: CGFloat = canvasHeight / 2  // Centerline in view space (200)
+            let centerlineY: CGFloat = 200.0  // Centerline in saved model space
 
-            func viewToModelPoint(_ point: CGPoint, isFixedX: Bool) -> SerializablePoint {
-                let modelY = centerlineInModel + (point.y - startY)
-                return SerializablePoint(x: Double(point.x), y: Double(modelY), isFixedX: isFixedX)
+            // Helper to convert from view model coordinates to saved model coordinates
+            func convertToSerializable(_ point: CGPoint, isFixedX: Bool) -> SerializablePoint {
+                let offsetFromCenterline = point.y - viewCenterY
+                let savedY = centerlineY + offsetFromCenterline
+                return SerializablePoint(x: Double(point.x), y: Double(savedY), isFixedX: isFixedX)
             }
 
             profile = SideProfileShape(
-                frontStart: viewToModelPoint(shapeView.frontStartModel, isFixedX: true),
-                frontControl: viewToModelPoint(shapeView.frontControlModel, isFixedX: false),
-                frontEnd: viewToModelPoint(shapeView.frontEndModel, isFixedX: false),
-                engineEnd: viewToModelPoint(shapeView.engineEndModel, isFixedX: false),
-                exhaustControl: viewToModelPoint(shapeView.exhaustControlModel, isFixedX: false),
-                exhaustEnd: viewToModelPoint(shapeView.exhaustEndModel, isFixedX: true),
-                topStart: viewToModelPoint(shapeView.topStartModel, isFixedX: true),
-                topControl: viewToModelPoint(shapeView.topControlModel, isFixedX: false),
-                topEnd: viewToModelPoint(shapeView.topEndModel, isFixedX: true),
+                frontStart: convertToSerializable(shapeView.inletStart, isFixedX: true),
+                frontControl: convertToSerializable(shapeView.inletControl, isFixedX: false),
+                frontEnd: convertToSerializable(shapeView.inletEnd, isFixedX: false),
+                engineEnd: convertToSerializable(shapeView.engineEnd, isFixedX: false),
+                exhaustControl: convertToSerializable(shapeView.nozzleControl, isFixedX: false),
+                exhaustEnd: convertToSerializable(shapeView.nozzleEnd, isFixedX: true),
+                topStart: convertToSerializable(shapeView.topStart, isFixedX: true),
+                topControl: convertToSerializable(shapeView.topControl, isFixedX: false),
+                topEnd: convertToSerializable(shapeView.topEnd, isFixedX: true),
                 engineLength: Double(shapeView.engineLength),
-                maxHeight: Double(maxHeight)
+                maxHeight: Double(shapeView.maxHeight)
             )
         }
         

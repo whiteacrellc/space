@@ -101,13 +101,13 @@ struct SideProfileShape: Codable {
         frontStart: SerializablePoint(x: 50, y: 200, isFixedX: true),
         frontControl: SerializablePoint(x: 150, y: 80, isFixedX: false),
         frontEnd: SerializablePoint(x: 250, y: 100, isFixedX: false),
-        engineEnd: SerializablePoint(x: 490, y: 100, isFixedX: false),
+        engineEnd: SerializablePoint(x: 375, y: 100, isFixedX: false),
         exhaustControl: SerializablePoint(x: 650, y: 80, isFixedX: false),
         exhaustEnd: SerializablePoint(x: 750, y: 200, isFixedX: true),
         topStart: SerializablePoint(x: 50, y: 200, isFixedX: true),
         topControl: SerializablePoint(x: 400, y: 320, isFixedX: false),
         topEnd: SerializablePoint(x: 750, y: 200, isFixedX: true),
-        engineLength: 240,
+        engineLength: 125,
         maxHeight: 120
     )
 }
@@ -152,6 +152,14 @@ class GameManager {
         // Load "Tom" save file as default if it exists
         if let data = UserDefaults.standard.data(forKey: "savedDesign_Tom"),
            let bundle = try? JSONDecoder().decode(AircraftDesignBundle.self, from: data) {
+
+            // Print the decoded JSON string for debugging
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("========== LOADED JSON FOR 'Tom' (at startup) ==========")
+                print(jsonString)
+                print("========================================================")
+            }
+
             currentSideProfile = bundle.sideProfile
             currentTopViewPlanform = bundle.topViewPlanform
             currentPlaneDesign = bundle.planeDesign
@@ -225,7 +233,7 @@ class GameManager {
     /// Simulate the entire flight based on the current flight plan
     func simulateFlight(plan: FlightPlan) -> MissionResult {
         // Reset simulator with current plane design
-        simulator = FlightSimulator(initialFuel: 50000.0, planeDesign: currentPlaneDesign)
+        simulator = FlightSimulator(planeDesign: currentPlaneDesign)
         propulsionManager.enableAutoMode()
 
         print("Using plane design: Sweep \(currentPlaneDesign.sweepAngle)°, Tilt \(currentPlaneDesign.tiltAngle)°, Pos \(currentPlaneDesign.position)")
@@ -419,6 +427,13 @@ class GameManager {
         guard let bundle = try? decoder.decode(AircraftDesignBundle.self, from: data) else {
             print("Failed to decode design bundle")
             return false
+        }
+
+        // Print the decoded JSON string for debugging
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("========== LOADED JSON FOR '\(name)' ==========")
+            print(jsonString)
+            print("==============================================")
         }
 
         currentSideProfile = bundle.sideProfile

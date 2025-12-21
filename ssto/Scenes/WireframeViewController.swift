@@ -3,7 +3,7 @@ import SceneKit
 
 class WireframeViewController: UIViewController {
 
-    var shapeView: ShapeView?  // Side profile (fuselage cross-section)
+    var shapeView: SideProfileShapeView?  // Side profile (fuselage cross-section)
     var topViewShape: TopViewShapeView?  // Top view (planform/leading edge)
     var maxHeight: CGFloat = 120.0
 
@@ -16,7 +16,13 @@ class WireframeViewController: UIViewController {
     private var pilotNode: SCNNode?
     private var axesNode: SCNNode?
     private var volumeLabel: UILabel?
-    private var instructionLabel: UILabel?
+    private var dragCoefficientLabel: UILabel?
+    private var lengthLabel: UILabel?
+    private var wingAreaLabel: UILabel?
+    private var wingSpanLabel: UILabel?
+    private var dryMassLabel: UILabel?
+    private var fuelCapacityLabel: UILabel?
+    private var totalMassLabel: UILabel?
     private var infoContainerView: UIView?
 
     // Gesture tracking
@@ -159,51 +165,168 @@ class WireframeViewController: UIViewController {
         view.addSubview(container)
         infoContainerView = container
 
-        // Instruction label
-        instructionLabel = UILabel()
-        instructionLabel?.text = "Drag: Rotate"
-        instructionLabel?.font = UIFont.systemFont(ofSize: 14)
-        instructionLabel?.textColor = .cyan
-        instructionLabel?.textAlignment = .left
-        if let instructionLabel = instructionLabel {
-            container.addSubview(instructionLabel)
+        let fontSize: CGFloat = 12
+        let spacing: CGFloat = 3
+
+        // Length label
+        lengthLabel = UILabel()
+        lengthLabel?.text = "Length: 0.0 m"
+        lengthLabel?.font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
+        lengthLabel?.textColor = .cyan
+        lengthLabel?.textAlignment = .left
+        if let lengthLabel = lengthLabel {
+            container.addSubview(lengthLabel)
+        }
+
+        // Wing Area label
+        wingAreaLabel = UILabel()
+        wingAreaLabel?.text = "Wing Area: 0.0 m²"
+        wingAreaLabel?.font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
+        wingAreaLabel?.textColor = .cyan
+        wingAreaLabel?.textAlignment = .left
+        if let wingAreaLabel = wingAreaLabel {
+            container.addSubview(wingAreaLabel)
+        }
+
+        // Wing Span label
+        wingSpanLabel = UILabel()
+        wingSpanLabel?.text = "Wing Span: 0.0 m"
+        wingSpanLabel?.font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
+        wingSpanLabel?.textColor = .cyan
+        wingSpanLabel?.textAlignment = .left
+        if let wingSpanLabel = wingSpanLabel {
+            container.addSubview(wingSpanLabel)
         }
 
         // Volume label
         volumeLabel = UILabel()
         volumeLabel?.text = "Volume: 0.0 m³"
-        volumeLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        volumeLabel?.font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
         volumeLabel?.textColor = .yellow
         volumeLabel?.textAlignment = .left
         if let volumeLabel = volumeLabel {
             container.addSubview(volumeLabel)
         }
 
+        // Dry Mass label
+        dryMassLabel = UILabel()
+        dryMassLabel?.text = "Dry Mass: 0 kg"
+        dryMassLabel?.font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
+        dryMassLabel?.textColor = .green
+        dryMassLabel?.textAlignment = .left
+        if let dryMassLabel = dryMassLabel {
+            container.addSubview(dryMassLabel)
+        }
+
+        // Fuel Capacity label
+        fuelCapacityLabel = UILabel()
+        fuelCapacityLabel?.text = "Fuel Capacity: 0 kg"
+        fuelCapacityLabel?.font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
+        fuelCapacityLabel?.textColor = .green
+        fuelCapacityLabel?.textAlignment = .left
+        if let fuelCapacityLabel = fuelCapacityLabel {
+            container.addSubview(fuelCapacityLabel)
+        }
+
+        // Total Mass label
+        totalMassLabel = UILabel()
+        totalMassLabel?.text = "Total Mass: 0 kg"
+        totalMassLabel?.font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
+        totalMassLabel?.textColor = .green
+        totalMassLabel?.textAlignment = .left
+        if let totalMassLabel = totalMassLabel {
+            container.addSubview(totalMassLabel)
+        }
+
+        // Drag coefficient label
+        dragCoefficientLabel = UILabel()
+        dragCoefficientLabel?.text = "Cd (M0.5, 50kft): 0.000"
+        dragCoefficientLabel?.font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
+        dragCoefficientLabel?.textColor = .orange
+        dragCoefficientLabel?.textAlignment = .left
+        if let dragCoefficientLabel = dragCoefficientLabel {
+            container.addSubview(dragCoefficientLabel)
+        }
+
         // Layout
         container.translatesAutoresizingMaskIntoConstraints = false
-        instructionLabel?.translatesAutoresizingMaskIntoConstraints = false
+        lengthLabel?.translatesAutoresizingMaskIntoConstraints = false
+        wingAreaLabel?.translatesAutoresizingMaskIntoConstraints = false
+        wingSpanLabel?.translatesAutoresizingMaskIntoConstraints = false
         volumeLabel?.translatesAutoresizingMaskIntoConstraints = false
+        dryMassLabel?.translatesAutoresizingMaskIntoConstraints = false
+        fuelCapacityLabel?.translatesAutoresizingMaskIntoConstraints = false
+        totalMassLabel?.translatesAutoresizingMaskIntoConstraints = false
+        dragCoefficientLabel?.translatesAutoresizingMaskIntoConstraints = false
 
         var constraints = [
             container.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             container.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
-            container.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-            container.heightAnchor.constraint(equalToConstant: 60)
+            container.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
+            container.heightAnchor.constraint(equalToConstant: 180)
         ]
 
-        if let instructionLabel = instructionLabel {
+        if let lengthLabel = lengthLabel {
             constraints.append(contentsOf: [
-                instructionLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-                instructionLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
-                instructionLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+                lengthLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                lengthLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+                lengthLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+            ])
+        }
+
+        if let wingAreaLabel = wingAreaLabel {
+            constraints.append(contentsOf: [
+                wingAreaLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                wingAreaLabel.topAnchor.constraint(equalTo: lengthLabel!.bottomAnchor, constant: spacing),
+                wingAreaLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+            ])
+        }
+
+        if let wingSpanLabel = wingSpanLabel {
+            constraints.append(contentsOf: [
+                wingSpanLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                wingSpanLabel.topAnchor.constraint(equalTo: wingAreaLabel!.bottomAnchor, constant: spacing),
+                wingSpanLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
             ])
         }
 
         if let volumeLabel = volumeLabel {
             constraints.append(contentsOf: [
                 volumeLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-                volumeLabel.topAnchor.constraint(equalTo: instructionLabel!.bottomAnchor, constant: 4),
+                volumeLabel.topAnchor.constraint(equalTo: wingSpanLabel!.bottomAnchor, constant: spacing),
                 volumeLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+            ])
+        }
+
+        if let dryMassLabel = dryMassLabel {
+            constraints.append(contentsOf: [
+                dryMassLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                dryMassLabel.topAnchor.constraint(equalTo: volumeLabel!.bottomAnchor, constant: spacing),
+                dryMassLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+            ])
+        }
+
+        if let fuelCapacityLabel = fuelCapacityLabel {
+            constraints.append(contentsOf: [
+                fuelCapacityLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                fuelCapacityLabel.topAnchor.constraint(equalTo: dryMassLabel!.bottomAnchor, constant: spacing),
+                fuelCapacityLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+            ])
+        }
+
+        if let totalMassLabel = totalMassLabel {
+            constraints.append(contentsOf: [
+                totalMassLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                totalMassLabel.topAnchor.constraint(equalTo: fuelCapacityLabel!.bottomAnchor, constant: spacing),
+                totalMassLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
+            ])
+        }
+
+        if let dragCoefficientLabel = dragCoefficientLabel {
+            constraints.append(contentsOf: [
+                dragCoefficientLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+                dragCoefficientLabel.topAnchor.constraint(equalTo: totalMassLabel!.bottomAnchor, constant: spacing),
+                dragCoefficientLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12)
             ])
         }
 
@@ -418,18 +541,31 @@ class WireframeViewController: UIViewController {
         // Otherwise use the saved one
         var profile = GameManager.shared.getSideProfile()
         if let shapeView = self.shapeView {
+            // Convert view model coordinates to saved model coordinates
+            // This matches the logic in SSTODesignViewController.saveToGameManager()
+            let canvasHeight: CGFloat = 400.0  // Standard canvas height from SSTODesignViewController
+            let viewCenterY: CGFloat = canvasHeight / 2  // Centerline in view space (200)
+            let centerlineY: CGFloat = 200.0  // Centerline in saved model space
+
+            // Helper to convert from view model coordinates to saved model coordinates
+            func convertToSerializable(_ point: CGPoint, isFixedX: Bool) -> SerializablePoint {
+                let offsetFromCenterline = point.y - viewCenterY
+                let savedY = centerlineY + offsetFromCenterline
+                return SerializablePoint(x: Double(point.x), y: Double(savedY), isFixedX: isFixedX)
+            }
+
             profile = SideProfileShape(
-                frontStart: SerializablePoint(from: shapeView.frontStartModel, isFixedX: true),
-                frontControl: SerializablePoint(from: shapeView.frontControlModel, isFixedX: false),
-                frontEnd: SerializablePoint(from: shapeView.frontEndModel, isFixedX: false),
-                engineEnd: SerializablePoint(from: shapeView.engineEndModel, isFixedX: false),
-                exhaustControl: SerializablePoint(from: shapeView.exhaustControlModel, isFixedX: false),
-                exhaustEnd: SerializablePoint(from: shapeView.exhaustEndModel, isFixedX: true),
-                topStart: SerializablePoint(from: shapeView.topStartModel, isFixedX: true),
-                topControl: SerializablePoint(from: shapeView.topControlModel, isFixedX: false),
-                topEnd: SerializablePoint(from: shapeView.topEndModel, isFixedX: true),
+                frontStart: convertToSerializable(shapeView.inletStart, isFixedX: true),
+                frontControl: convertToSerializable(shapeView.inletControl, isFixedX: false),
+                frontEnd: convertToSerializable(shapeView.inletEnd, isFixedX: false),
+                engineEnd: convertToSerializable(shapeView.engineEnd, isFixedX: false),
+                exhaustControl: convertToSerializable(shapeView.nozzleControl, isFixedX: false),
+                exhaustEnd: convertToSerializable(shapeView.nozzleEnd, isFixedX: true),
+                topStart: convertToSerializable(shapeView.topStart, isFixedX: true),
+                topControl: convertToSerializable(shapeView.topControl, isFixedX: false),
+                topEnd: convertToSerializable(shapeView.topEnd, isFixedX: true),
                 engineLength: Double(shapeView.engineLength),
-                maxHeight: Double(maxHeight)
+                maxHeight: Double(shapeView.maxHeight)
             )
         }
         
@@ -529,11 +665,11 @@ class WireframeViewController: UIViewController {
 
         addCoordinateAxes()
 
-        // Calculate and display volume
-        calculateAndDisplayVolume(meshPoints: meshPoints, planform: planform, profile: profile)
+        // Calculate and display all aircraft dimensions
+        calculateAndDisplayDimensions(meshPoints: meshPoints, planform: planform, profile: profile)
     }
 
-    private func calculateAndDisplayVolume(meshPoints: [[SCNVector3]], planform: TopViewPlanform, profile: SideProfileShape) {
+    private func calculateAndDisplayDimensions(meshPoints: [[SCNVector3]], planform: TopViewPlanform, profile: SideProfileShape) {
         // Get aircraft length in meters from planform
         let aircraftLengthMeters = planform.aircraftLength
 
@@ -571,9 +707,44 @@ class WireframeViewController: UIViewController {
         let conversionFactor = metersPerUnit * metersPerUnit * metersPerUnit
         let volumeInMeters = totalVolume * conversionFactor
 
-        // Update the volume label
+        // Calculate wing area (same logic as in TopViewShapeView)
+        let fuselageLength = planform.tailLeft.x - planform.noseTip.x
+        let wingStartX = planform.noseTip.x + (fuselageLength * planform.wingStartPosition)
+        let wingTrailingX = planform.tailLeft.x
+        let wingChordCanvas = wingTrailingX - wingStartX
+        let wingSpanCanvas = planform.wingSpan
+        let wingChordMeters = wingChordCanvas * metersPerUnit
+        let wingSpanMeters = wingSpanCanvas * metersPerUnit
+        let totalWingArea = wingChordMeters * wingSpanMeters
+
+        // Calculate wing span (total span, both sides)
+        let totalWingSpan = wingSpanMeters * 2.0
+
+        // Calculate mass
+        let dryMassKg = 15000.0  // From PhysicsConstants
+        let fuelDensityKgPerLiter = 0.08  // From PhysicsConstants
+        let volumeInLiters = volumeInMeters * 1000.0  // Convert m³ to liters
+        let fuelCapacityKg = volumeInLiters * fuelDensityKgPerLiter
+        let totalMassKg = dryMassKg + fuelCapacityKg
+
+        // Calculate drag coefficient
+        let planeDesign = GameManager.shared.getPlaneDesign()
+        let dragCalculator = DragCalculator(planeDesign: planeDesign)
+        let mach = 0.5
+        let altitudeFeet = 50000.0
+        let altitudeMeters = altitudeFeet * 0.3048  // Convert feet to meters
+        let cd = dragCalculator.getCd(mach: mach, altitude: altitudeMeters)
+
+        // Update all labels
         DispatchQueue.main.async { [weak self] in
+            self?.lengthLabel?.text = String(format: "Length: %.1f m", aircraftLengthMeters)
+            self?.wingAreaLabel?.text = String(format: "Wing Area: %.1f m²", totalWingArea)
+            self?.wingSpanLabel?.text = String(format: "Wing Span: %.1f m", totalWingSpan)
             self?.volumeLabel?.text = String(format: "Volume: %.1f m³", volumeInMeters)
+            self?.dryMassLabel?.text = String(format: "Dry Mass: %d kg", Int(dryMassKg))
+            self?.fuelCapacityLabel?.text = String(format: "Fuel Capacity: %d kg", Int(fuelCapacityKg))
+            self?.totalMassLabel?.text = String(format: "Total Mass: %d kg", Int(totalMassKg))
+            self?.dragCoefficientLabel?.text = String(format: "Cd (M0.5, 50kft): %.3f", cd)
         }
     }
 

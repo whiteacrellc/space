@@ -55,7 +55,8 @@ class FlightPlan: Codable {
 
         // Check if final waypoint reaches orbit
         if let last = waypoints.last {
-            return last.altitude >= PhysicsConstants.orbitAltitude &&
+            let lastAltitudeMeters = last.altitude * PhysicsConstants.feetToMeters
+            return lastAltitudeMeters >= PhysicsConstants.orbitAltitude &&
                    last.speed >= PhysicsConstants.orbitSpeed
         }
 

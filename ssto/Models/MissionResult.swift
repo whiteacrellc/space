@@ -36,6 +36,7 @@ struct MissionResult {
     let finalAltitude: Double // feet
     let finalSpeed: Double // Mach
     let score: Int
+    let maxTemperature: Double // maximum temperature experienced (Celsius)
 
     /// Calculate fuel efficiency (higher is better)
     var efficiency: Double {

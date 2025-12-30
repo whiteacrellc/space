@@ -45,6 +45,9 @@ class SideProfileShapeView: UIView {
     let canvasWidth: CGFloat = 800.0
     let canvasHeight: CGFloat = 400.0
 
+    // View scale factor (for fitting large aircraft)
+    var viewScale: CGFloat = 1.0
+
     // Visual styling
     private let shapeColor = UIColor(red: 0.3, green: 0.5, blue: 0.9, alpha: 0.7)
     private let outlineColor = UIColor.white
@@ -76,6 +79,9 @@ class SideProfileShapeView: UIView {
 
         // Draw engine section indicator
         drawEngineSection(context: context, engineStart: inletEndView, engineEnd: engineEndView)
+
+        // Draw payload and pilot boxes
+        drawPayloadAndPilotBoxes(context: context)
 
         // Draw main aircraft shape
         drawMainShape(inletStart: inletStartView, inletControl: inletControlView, inletEnd: inletEndView,
@@ -177,16 +183,141 @@ class SideProfileShapeView: UIView {
         shapePath.stroke()
     }
 
+    private func drawPayloadAndPilotBoxes(context: CGContext) {
+        // Dimensions in meters
+        let pilotLength: CGFloat = 6.0   // 6m long
+        let pilotHeight: CGFloat = 3.0   // 3m high
+        let payloadLength: CGFloat = 20.0 // 20m long
+        let payloadHeight: CGFloat = 5.0  // 5m high
+
+        // Scale: canvas width (800) represents approximately 70 meters
+        let scale = canvasWidth / 70.0  // ~11.43 units per meter
+
+        // Convert to canvas units
+        let pilotLengthCanvas = pilotLength * scale
+        let pilotHeightCanvas = pilotHeight * scale
+        let payloadLengthCanvas = payloadLength * scale
+        let payloadHeightCanvas = payloadHeight * scale
+
+        // Calculate the middle of the aircraft (between nose and tail)
+        let aircraftMiddleX = (inletStart.x + nozzleEnd.x) / 2.0
+
+        // Center the payload box at the middle of the aircraft
+        let payloadStartX = aircraftMiddleX - (payloadLengthCanvas / 2.0)
+
+        // Position payload box lower - center it vertically on the centerline
+        let payloadCenterY = inletStart.y - (payloadHeightCanvas / 2.0)
+        let payloadBoxModel = CGRect(
+            x: payloadStartX,
+            y: payloadCenterY,
+            width: payloadLengthCanvas,
+            height: payloadHeightCanvas
+        )
+
+        // Pilot box in front of payload, right edge aligned with left edge of payload
+        let pilotStartX = payloadStartX - pilotLengthCanvas
+
+        // Position pilot box at same vertical level as payload
+        let pilotCenterY = inletStart.y - (pilotHeightCanvas / 2.0)
+        let pilotBoxModel = CGRect(
+            x: pilotStartX,
+            y: pilotCenterY,
+            width: pilotLengthCanvas,
+            height: pilotHeightCanvas
+        )
+
+        // Convert to view coordinates
+        let pilotTopLeft = modelToView(CGPoint(x: pilotBoxModel.minX, y: pilotBoxModel.maxY))
+        let pilotBottomRight = modelToView(CGPoint(x: pilotBoxModel.maxX, y: pilotBoxModel.minY))
+        let pilotBoxView = CGRect(
+            x: pilotTopLeft.x,
+            y: pilotTopLeft.y,
+            width: pilotBottomRight.x - pilotTopLeft.x,
+            height: pilotBottomRight.y - pilotTopLeft.y
+        )
+
+        let payloadTopLeft = modelToView(CGPoint(x: payloadBoxModel.minX, y: payloadBoxModel.maxY))
+        let payloadBottomRight = modelToView(CGPoint(x: payloadBoxModel.maxX, y: payloadBoxModel.minY))
+        let payloadBoxView = CGRect(
+            x: payloadTopLeft.x,
+            y: payloadTopLeft.y,
+            width: payloadBottomRight.x - payloadTopLeft.x,
+            height: payloadBottomRight.y - payloadTopLeft.y
+        )
+
+        // Draw pilot box
+        context.setStrokeColor(UIColor.green.withAlphaComponent(0.8).cgColor)
+        context.setFillColor(UIColor.green.withAlphaComponent(0.2).cgColor)
+        context.setLineWidth(2.0)
+        context.addRect(pilotBoxView)
+        context.drawPath(using: .fillStroke)
+
+        // Draw payload box
+        context.setStrokeColor(UIColor.orange.withAlphaComponent(0.8).cgColor)
+        context.setFillColor(UIColor.orange.withAlphaComponent(0.2).cgColor)
+        context.setLineWidth(2.0)
+        context.addRect(payloadBoxView)
+        context.drawPath(using: .fillStroke)
+
+        // Add labels
+        let pilotLabel = "Pilot\n3m high"
+        let payloadLabel = "Payload\n5m high"
+
+        let labelFont = UIFont.systemFont(ofSize: 10, weight: .medium)
+        let labelAttributes: [NSAttributedString.Key: Any] = [
+            .font: labelFont,
+            .foregroundColor: UIColor.white
+        ]
+
+        // Pilot label
+        let pilotLabelPoint = CGPoint(
+            x: pilotBoxView.midX - 20,
+            y: pilotBoxView.midY - 10
+        )
+        (pilotLabel as NSString).draw(at: pilotLabelPoint, withAttributes: labelAttributes)
+
+        // Payload label
+        let payloadLabelPoint = CGPoint(
+            x: payloadBoxView.midX - 20,
+            y: payloadBoxView.midY - 10
+        )
+        (payloadLabel as NSString).draw(at: payloadLabelPoint, withAttributes: labelAttributes)
+
+        // Draw minimum length indicator in lower right
+        let minLength: CGFloat = 30.0  // 30m minimum (ensures pilot + payload boxes fit)
+        let minLengthText = String(format: "Min Length: %.0fm", minLength)
+
+        let minLengthFont = UIFont.monospacedSystemFont(ofSize: 12, weight: .bold)
+        let minLengthAttributes: [NSAttributedString.Key: Any] = [
+            .font: minLengthFont,
+            .foregroundColor: UIColor.yellow
+        ]
+
+        // Position in lower right corner (view coordinates)
+        let textSize = (minLengthText as NSString).size(withAttributes: minLengthAttributes)
+        let minLengthPoint = CGPoint(
+            x: bounds.width - textSize.width - 10,
+            y: bounds.height - textSize.height - 5
+        )
+        (minLengthText as NSString).draw(at: minLengthPoint, withAttributes: minLengthAttributes)
+    }
+
     // MARK: - Coordinate Conversion
 
     /// Convert from model coordinates (origin bottom-left, Y up) to view coordinates (origin top-left, Y down)
     func modelToView(_ point: CGPoint) -> CGPoint {
-        return CGPoint(x: point.x, y: canvasHeight - point.y)
+        let scaledX = point.x * viewScale
+        let scaledY = point.y * viewScale
+        let scaledHeight = canvasHeight * viewScale
+        return CGPoint(x: scaledX, y: scaledHeight - scaledY)
     }
 
     /// Convert from view coordinates to model coordinates
     func viewToModel(_ point: CGPoint) -> CGPoint {
-        return CGPoint(x: point.x, y: canvasHeight - point.y)
+        let scaledHeight = canvasHeight * viewScale
+        let modelX = point.x / viewScale
+        let modelY = (scaledHeight - point.y) / viewScale
+        return CGPoint(x: modelX, y: modelY)
     }
 }
 
@@ -203,10 +334,12 @@ class SSTODesignViewController: UIViewController {
     private let shapeView = SideProfileShapeView()
 
     // Control points
+    private var noseControlPoint: DraggableControlPoint!
     private var inletControlPoint: DraggableControlPoint!
     private var inletEndPoint: DraggableControlPoint!
     private var engineEndPoint: DraggableControlPoint!
     private var nozzleControlPoint: DraggableControlPoint!
+    private var nozzleEndPoint: DraggableControlPoint!
     private var topControlPoint: DraggableControlPoint!
 
     // Sliders and labels
@@ -214,6 +347,8 @@ class SSTODesignViewController: UIViewController {
     private let engineLengthValueLabel = UILabel()
     private let maxHeightSlider = UISlider()
     private let maxHeightValueLabel = UILabel()
+    private let aircraftLengthSlider = UISlider()
+    private let aircraftLengthValueLabel = UILabel()
 
     // Real-time feedback labels
     private let enginePositionLabel = UILabel()
@@ -278,6 +413,16 @@ class SSTODesignViewController: UIViewController {
         subtitleLabel.textAlignment = .center
         headerView.addSubview(subtitleLabel)
 
+        // Save button
+        let saveButton = createHeaderButton(title: "Save", color: .green)
+        saveButton.addTarget(self, action: #selector(saveButtonTapped), for: .touchUpInside)
+        headerView.addSubview(saveButton)
+
+        // Load button
+        let loadButton = createHeaderButton(title: "Load", color: .orange)
+        loadButton.addTarget(self, action: #selector(loadButtonTapped), for: .touchUpInside)
+        headerView.addSubview(loadButton)
+
         // 3D View button
         let threeDButton = createHeaderButton(title: "3D View →", color: .cyan)
         threeDButton.addTarget(self, action: #selector(show3DView), for: .touchUpInside)
@@ -288,6 +433,8 @@ class SSTODesignViewController: UIViewController {
         doneButton.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        saveButton.translatesAutoresizingMaskIntoConstraints = false
+        loadButton.translatesAutoresizingMaskIntoConstraints = false
         threeDButton.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
@@ -304,6 +451,12 @@ class SSTODesignViewController: UIViewController {
 
             subtitleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+
+            saveButton.trailingAnchor.constraint(equalTo: threeDButton.leadingAnchor, constant: -10),
+            saveButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+
+            loadButton.trailingAnchor.constraint(equalTo: saveButton.leadingAnchor, constant: -10),
+            loadButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
 
             threeDButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -20),
             threeDButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor)
@@ -335,12 +488,12 @@ class SSTODesignViewController: UIViewController {
 
         engineLengthSlider.minimumValue = 50
         engineLengthSlider.maximumValue = 200
-        engineLengthSlider.value = 125
+        engineLengthSlider.value = 119
         engineLengthSlider.minimumTrackTintColor = .yellow
         engineLengthSlider.maximumTrackTintColor = UIColor.gray.withAlphaComponent(0.3)
         engineLengthSlider.addTarget(self, action: #selector(engineLengthChanged), for: .valueChanged)
 
-        // Max height controls (center)
+        // Max height controls (center-left)
         let maxHeightLabel = createFooterLabel(text: "Max Height:")
         maxHeightValueLabel.text = "120"
         maxHeightValueLabel.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .bold)
@@ -349,10 +502,24 @@ class SSTODesignViewController: UIViewController {
 
         maxHeightSlider.minimumValue = 50
         maxHeightSlider.maximumValue = 180
-        maxHeightSlider.value = 120
+        maxHeightSlider.value = 158
         maxHeightSlider.minimumTrackTintColor = .cyan
         maxHeightSlider.maximumTrackTintColor = UIColor.gray.withAlphaComponent(0.3)
         maxHeightSlider.addTarget(self, action: #selector(maxHeightChanged), for: .valueChanged)
+
+        // Aircraft length controls (center-right)
+        let aircraftLengthLabel = createFooterLabel(text: "Aircraft Length:")
+        aircraftLengthValueLabel.text = "70"
+        aircraftLengthValueLabel.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .bold)
+        aircraftLengthValueLabel.textColor = .orange
+        aircraftLengthValueLabel.textAlignment = .right
+
+        aircraftLengthSlider.minimumValue = 30
+        aircraftLengthSlider.maximumValue = 150
+        aircraftLengthSlider.value = 70
+        aircraftLengthSlider.minimumTrackTintColor = .orange
+        aircraftLengthSlider.maximumTrackTintColor = UIColor.gray.withAlphaComponent(0.3)
+        aircraftLengthSlider.addTarget(self, action: #selector(aircraftLengthChanged), for: .valueChanged)
 
         // Engine position feedback (right side)
         enginePositionLabel.text = "Engine: 250 → 490"
@@ -367,6 +534,9 @@ class SSTODesignViewController: UIViewController {
         footerView.addSubview(maxHeightLabel)
         footerView.addSubview(maxHeightValueLabel)
         footerView.addSubview(maxHeightSlider)
+        footerView.addSubview(aircraftLengthLabel)
+        footerView.addSubview(aircraftLengthValueLabel)
+        footerView.addSubview(aircraftLengthSlider)
         footerView.addSubview(enginePositionLabel)
 
         // Layout
@@ -377,6 +547,9 @@ class SSTODesignViewController: UIViewController {
         maxHeightLabel.translatesAutoresizingMaskIntoConstraints = false
         maxHeightValueLabel.translatesAutoresizingMaskIntoConstraints = false
         maxHeightSlider.translatesAutoresizingMaskIntoConstraints = false
+        aircraftLengthLabel.translatesAutoresizingMaskIntoConstraints = false
+        aircraftLengthValueLabel.translatesAutoresizingMaskIntoConstraints = false
+        aircraftLengthSlider.translatesAutoresizingMaskIntoConstraints = false
         enginePositionLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
@@ -385,7 +558,7 @@ class SSTODesignViewController: UIViewController {
             footerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             footerView.heightAnchor.constraint(equalToConstant: 70),
 
-            // Engine length (left third)
+            // Engine length (left)
             engineLengthLabel.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 20),
             engineLengthLabel.topAnchor.constraint(equalTo: footerView.topAnchor, constant: 12),
 
@@ -395,19 +568,31 @@ class SSTODesignViewController: UIViewController {
 
             engineLengthSlider.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 20),
             engineLengthSlider.topAnchor.constraint(equalTo: engineLengthLabel.bottomAnchor, constant: 8),
-            engineLengthSlider.widthAnchor.constraint(equalToConstant: 200),
+            engineLengthSlider.widthAnchor.constraint(equalToConstant: 180),
 
-            // Max height (center)
-            maxHeightLabel.centerXAnchor.constraint(equalTo: footerView.centerXAnchor, constant: -80),
+            // Max height (center-left)
+            maxHeightLabel.leadingAnchor.constraint(equalTo: engineLengthSlider.trailingAnchor, constant: 30),
             maxHeightLabel.topAnchor.constraint(equalTo: footerView.topAnchor, constant: 12),
 
             maxHeightValueLabel.leadingAnchor.constraint(equalTo: maxHeightLabel.trailingAnchor, constant: 8),
             maxHeightValueLabel.centerYAnchor.constraint(equalTo: maxHeightLabel.centerYAnchor),
             maxHeightValueLabel.widthAnchor.constraint(equalToConstant: 40),
 
-            maxHeightSlider.centerXAnchor.constraint(equalTo: footerView.centerXAnchor),
+            maxHeightSlider.leadingAnchor.constraint(equalTo: engineLengthSlider.trailingAnchor, constant: 30),
             maxHeightSlider.topAnchor.constraint(equalTo: maxHeightLabel.bottomAnchor, constant: 8),
-            maxHeightSlider.widthAnchor.constraint(equalToConstant: 200),
+            maxHeightSlider.widthAnchor.constraint(equalToConstant: 180),
+
+            // Aircraft length (center-right)
+            aircraftLengthLabel.leadingAnchor.constraint(equalTo: maxHeightSlider.trailingAnchor, constant: 30),
+            aircraftLengthLabel.topAnchor.constraint(equalTo: footerView.topAnchor, constant: 12),
+
+            aircraftLengthValueLabel.leadingAnchor.constraint(equalTo: aircraftLengthLabel.trailingAnchor, constant: 8),
+            aircraftLengthValueLabel.centerYAnchor.constraint(equalTo: aircraftLengthLabel.centerYAnchor),
+            aircraftLengthValueLabel.widthAnchor.constraint(equalToConstant: 40),
+
+            aircraftLengthSlider.leadingAnchor.constraint(equalTo: maxHeightSlider.trailingAnchor, constant: 30),
+            aircraftLengthSlider.topAnchor.constraint(equalTo: aircraftLengthLabel.bottomAnchor, constant: 8),
+            aircraftLengthSlider.widthAnchor.constraint(equalToConstant: 180),
 
             // Engine position (right side)
             enginePositionLabel.trailingAnchor.constraint(equalTo: footerView.trailingAnchor, constant: -20),
@@ -480,18 +665,48 @@ class SSTODesignViewController: UIViewController {
         shapeView.topEnd = convertPoint(profile.topEnd)
 
         shapeView.engineStart = shapeView.inletEnd
+
+        // Ensure nose and tail points are consistent
+        shapeView.topStart = shapeView.inletStart  // Nose: top and bottom meet
+        shapeView.topEnd = shapeView.nozzleEnd     // Tail: top and bottom meet
         shapeView.engineLength = CGFloat(profile.engineLength)
         shapeView.maxHeight = CGFloat(profile.maxHeight)
+
+        // Calculate aircraft length (from nose to tail in meters, assuming canvas scale)
+        let aircraftLengthCanvas = shapeView.nozzleEnd.x - shapeView.inletStart.x
+        let scale = canvasWidth / 70.0  // Canvas scale: ~11.43 units per meter
+        let aircraftLengthMeters = aircraftLengthCanvas / scale
 
         // Update UI controls
         engineLengthSlider.value = Float(profile.engineLength)
         maxHeightSlider.value = Float(profile.maxHeight)
+        aircraftLengthSlider.value = Float(aircraftLengthMeters)
         engineLengthValueLabel.text = String(format: "%.0f", profile.engineLength)
         maxHeightValueLabel.text = String(format: "%.0f", profile.maxHeight)
+        aircraftLengthValueLabel.text = String(format: "%.0f", aircraftLengthMeters)
     }
 
     private func setupControlPoints() {
         let pointSize = CGSize(width: 16, height: 16)
+
+        // Nose control point (vertical only - adjusts front of aircraft)
+        // Both inlet and top curves start at the same point (the nose)
+        noseControlPoint = createControlPoint(size: pointSize, color: .magenta,
+                                             verticalOnly: true, horizontalOnly: false)
+        noseControlPoint.onMoved = { [weak self] newCenter in
+            guard let self = self else { return }
+            let modelPoint = self.canvasToModel(newCenter)
+
+            // Update both inlet start and top start Y positions (they meet at the nose)
+            self.shapeView.inletStart.y = modelPoint.y
+            self.shapeView.topStart.y = modelPoint.y
+
+            // Keep X positions
+            self.noseControlPoint.center.x = self.modelToCanvas(self.shapeView.inletStart).x
+
+            self.updateControlPointPositions()
+            self.shapeView.setNeedsDisplay()
+        }
 
         // Inlet control point (free movement for inlet curve shape)
         inletControlPoint = createControlPoint(size: pointSize, color: .green,
@@ -560,6 +775,25 @@ class SSTODesignViewController: UIViewController {
             self.shapeView.setNeedsDisplay()
         }
 
+        // Nozzle end point (vertical only - adjusts rear tail height)
+        // Both nozzle and top curves end at the same point (the tail)
+        nozzleEndPoint = createControlPoint(size: pointSize, color: .red,
+                                           verticalOnly: true, horizontalOnly: false)
+        nozzleEndPoint.onMoved = { [weak self] newCenter in
+            guard let self = self else { return }
+            let modelPoint = self.canvasToModel(newCenter)
+
+            // Update both nozzle end and top end Y positions (they meet at the tail)
+            self.shapeView.nozzleEnd.y = modelPoint.y
+            self.shapeView.topEnd.y = modelPoint.y
+
+            // Keep X positions
+            self.nozzleEndPoint.center.x = self.modelToCanvas(self.shapeView.nozzleEnd).x
+
+            self.updateControlPointPositions()
+            self.shapeView.setNeedsDisplay()
+        }
+
         // Top control point (free movement - controls top curve and max height)
         topControlPoint = createControlPoint(size: pointSize, color: .cyan,
                                             verticalOnly: false, horizontalOnly: false)
@@ -588,10 +822,12 @@ class SSTODesignViewController: UIViewController {
     }
 
     private func updateControlPointPositions() {
+        noseControlPoint?.center = modelToCanvas(shapeView.inletStart)
         inletControlPoint?.center = modelToCanvas(shapeView.inletControl)
         inletEndPoint?.center = modelToCanvas(shapeView.inletEnd)
         engineEndPoint?.center = modelToCanvas(shapeView.engineEnd)
         nozzleControlPoint?.center = modelToCanvas(shapeView.nozzleControl)
+        nozzleEndPoint?.center = modelToCanvas(shapeView.nozzleEnd)
         topControlPoint?.center = modelToCanvas(shapeView.topControl)
     }
 
@@ -605,6 +841,46 @@ class SSTODesignViewController: UIViewController {
         let startX = Int(shapeView.inletEnd.x)
         let endX = Int(shapeView.engineEnd.x)
         enginePositionLabel.text = "Engine: \(startX) → \(endX)"
+    }
+
+    private func adjustViewToFitAircraft() {
+        // Calculate bounds of the aircraft in model space
+        let minX = shapeView.inletStart.x
+        let maxX = shapeView.nozzleEnd.x
+
+        // Find min and max Y across all control points
+        let allYValues: [CGFloat] = [
+            shapeView.inletStart.y,
+            shapeView.inletControl.y,
+            shapeView.inletEnd.y,
+            shapeView.engineEnd.y,
+            shapeView.nozzleControl.y,
+            shapeView.nozzleEnd.y,
+            shapeView.topStart.y,
+            shapeView.topControl.y,
+            shapeView.topEnd.y
+        ]
+        let minY = allYValues.min() ?? 0
+        let maxY = allYValues.max() ?? canvasHeight
+
+        let aircraftWidth = maxX - minX
+        let aircraftHeight = maxY - minY
+
+        // Add 10% padding
+        let paddingFactor: CGFloat = 1.1
+
+        // Calculate scale factors to fit in canvas
+        let scaleX = canvasWidth / (aircraftWidth * paddingFactor)
+        let scaleY = canvasHeight / (aircraftHeight * paddingFactor)
+
+        // Use the smaller scale to ensure everything fits
+        let newScale = min(scaleX, scaleY, 1.0)  // Don't zoom in past 1.0
+
+        shapeView.viewScale = newScale
+
+        // Update control point positions with new scale
+        updateControlPointPositions()
+        shapeView.setNeedsDisplay()
     }
 
     // MARK: - Coordinate Conversion
@@ -657,6 +933,58 @@ class SSTODesignViewController: UIViewController {
         shapeView.setNeedsDisplay()
     }
 
+    @objc private func aircraftLengthChanged(_ slider: UISlider) {
+        let newLengthMeters = CGFloat(slider.value)
+        let scale = canvasWidth / 70.0  // Canvas scale: ~11.43 units per meter
+
+        // Calculate current aircraft length
+        let currentLengthCanvas = shapeView.nozzleEnd.x - shapeView.inletStart.x
+        let currentLengthMeters = currentLengthCanvas / scale
+
+        // Calculate scale factor
+        let scaleFactor = newLengthMeters / currentLengthMeters
+
+        // Scale relative to (nose X, canvas center Y)
+        let originX = shapeView.inletStart.x
+        let originY = canvasHeight / 2.0
+
+        // Helper function to scale a point relative to origin
+        func scalePoint(_ point: CGPoint) -> CGPoint {
+            let offset = CGPoint(x: point.x - originX, y: point.y - originY)
+            let scaledOffset = CGPoint(x: offset.x * scaleFactor, y: offset.y * scaleFactor)
+            return CGPoint(x: originX + scaledOffset.x, y: originY + scaledOffset.y)
+        }
+
+        // Scale all control points
+        shapeView.inletStart = scalePoint(shapeView.inletStart)
+        shapeView.topStart = shapeView.inletStart  // topStart equals inletStart (nose point)
+        shapeView.inletControl = scalePoint(shapeView.inletControl)
+        shapeView.inletEnd = scalePoint(shapeView.inletEnd)
+        shapeView.engineStart = shapeView.inletEnd  // engineStart equals inletEnd
+        shapeView.engineEnd = scalePoint(shapeView.engineEnd)
+        shapeView.nozzleControl = scalePoint(shapeView.nozzleControl)
+        shapeView.nozzleEnd = scalePoint(shapeView.nozzleEnd)
+        shapeView.topControl = scalePoint(shapeView.topControl)
+        shapeView.topEnd = shapeView.nozzleEnd  // topEnd equals nozzleEnd (tail point)
+
+        // Update engine length to reflect scaled distance
+        shapeView.engineLength = shapeView.engineEnd.x - shapeView.inletEnd.x
+
+        // Update max height to reflect scaled height
+        let engineBaseline = shapeView.inletEnd.y
+        shapeView.maxHeight = shapeView.topControl.y - engineBaseline
+
+        // Update sliders to reflect new values
+        engineLengthSlider.value = Float(shapeView.engineLength)
+        maxHeightSlider.value = Float(shapeView.maxHeight)
+        engineLengthValueLabel.text = String(format: "%.0f", shapeView.engineLength)
+        maxHeightValueLabel.text = String(format: "%.0f", shapeView.maxHeight)
+        aircraftLengthValueLabel.text = String(format: "%.0f", newLengthMeters)
+
+        updateEnginePositionLabel()
+        adjustViewToFitAircraft()  // Adjust view to fit the scaled aircraft
+    }
+
     @objc private func show3DView() {
         let wireframeVC = WireframeViewController()
         wireframeVC.shapeView = self.shapeView
@@ -668,6 +996,113 @@ class SSTODesignViewController: UIViewController {
     @objc private func doneButtonTapped() {
         saveToGameManager()
         dismiss(animated: true, completion: nil)
+    }
+
+    @objc private func saveButtonTapped() {
+        // First save current design to GameManager
+        saveToGameManager()
+
+        let alert = UIAlertController(
+            title: "Save Design",
+            message: "Enter a name for your design",
+            preferredStyle: .alert
+        )
+
+        alert.addTextField { textField in
+            textField.placeholder = "Design Name"
+            textField.autocapitalizationType = .words
+        }
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
+            guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces),
+                  !name.isEmpty else {
+                self?.showAlert(title: "Error", message: "Please enter a valid name")
+                return
+            }
+
+            // Check if design already exists
+            if GameManager.shared.getSavedDesignNames().contains(name) {
+                self?.confirmOverwrite(name: name)
+            } else {
+                self?.performSave(name: name)
+            }
+        })
+
+        present(alert, animated: true)
+    }
+
+    @objc private func loadButtonTapped() {
+        let savedDesigns = GameManager.shared.getSavedDesignNames()
+
+        guard !savedDesigns.isEmpty else {
+            showAlert(title: "No Designs", message: "No saved designs found")
+            return
+        }
+
+        let alert = UIAlertController(
+            title: "Load Design",
+            message: "Select a design to load",
+            preferredStyle: .actionSheet
+        )
+
+        for name in savedDesigns {
+            alert.addAction(UIAlertAction(title: name, style: .default) { [weak self] _ in
+                self?.performLoad(name: name)
+            })
+        }
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+
+        // iPad support
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+
+        present(alert, animated: true)
+    }
+
+    private func confirmOverwrite(name: String) {
+        let alert = UIAlertController(
+            title: "Design Exists",
+            message: "A design named '\(name)' already exists. Overwrite it?",
+            preferredStyle: .alert
+        )
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Overwrite", style: .destructive) { [weak self] _ in
+            self?.performSave(name: name)
+        })
+
+        present(alert, animated: true)
+    }
+
+    private func performSave(name: String) {
+        if GameManager.shared.saveDesign(name: name) {
+            showAlert(title: "Success", message: "Design '\(name)' saved successfully")
+        } else {
+            showAlert(title: "Error", message: "Failed to save design")
+        }
+    }
+
+    private func performLoad(name: String) {
+        if GameManager.shared.loadDesign(name: name) {
+            // Reload the design from GameManager
+            loadDesignFromGameManager()
+            setupControlPoints()
+            updateAllViews()
+            showAlert(title: "Success", message: "Design '\(name)' loaded successfully")
+        } else {
+            showAlert(title: "Error", message: "Failed to load design")
+        }
+    }
+
+    private func showAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 
     // MARK: - Save to GameManager

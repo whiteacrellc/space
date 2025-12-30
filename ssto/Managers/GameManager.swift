@@ -73,12 +73,12 @@ struct TopViewPlanform: Codable {
 
     static let defaultPlanform = TopViewPlanform(
         noseTip: SerializablePoint(x: 50, y: 0, isFixedX: true),
-        frontControlLeft: SerializablePoint(x: 150, y: -30, isFixedX: false),
-        midLeft: SerializablePoint(x: 300, y: -100, isFixedX: false),
-        rearControlLeft: SerializablePoint(x: 500, y: -80, isFixedX: false),
+        frontControlLeft: SerializablePoint(x: 63.333343505859375, y: -88.66665649414062, isFixedX: false),
+        midLeft: SerializablePoint(x: 300, y: -84.33332824707031, isFixedX: false),
+        rearControlLeft: SerializablePoint(x: 522, y: -85.33332824707031, isFixedX: false),
         tailLeft: SerializablePoint(x: 750, y: -50, isFixedX: false),
-        wingStartPosition: 0.67,     // Start at 2/3 back
-        wingSpan: 150.0,             // Default wing span
+        wingStartPosition: 0.5872832536697388,     // Wing start position
+        wingSpan: 67.23506927490234,             // Default wing span
         aircraftLength: 70.0         // Default length in meters
     )
 }
@@ -101,13 +101,13 @@ struct SideProfileShape: Codable {
         frontStart: SerializablePoint(x: 50, y: 200, isFixedX: true),
         frontControl: SerializablePoint(x: 150, y: 80, isFixedX: false),
         frontEnd: SerializablePoint(x: 250, y: 100, isFixedX: false),
-        engineEnd: SerializablePoint(x: 375, y: 100, isFixedX: false),
+        engineEnd: SerializablePoint(x: 490, y: 100, isFixedX: false),
         exhaustControl: SerializablePoint(x: 650, y: 80, isFixedX: false),
         exhaustEnd: SerializablePoint(x: 750, y: 200, isFixedX: true),
         topStart: SerializablePoint(x: 50, y: 200, isFixedX: true),
         topControl: SerializablePoint(x: 400, y: 320, isFixedX: false),
         topEnd: SerializablePoint(x: 750, y: 200, isFixedX: true),
-        engineLength: 125,
+        engineLength: 240,
         maxHeight: 120
     )
 }
@@ -135,6 +135,21 @@ struct SerializablePoint: Codable {
     }
 }
 
+/// Leaderboard entry for aircraft optimization scores
+struct LeaderboardEntry: Codable, Identifiable, Comparable {
+    var id: UUID = UUID()
+    var name: String
+    var volume: Double         // m³ (lower is better)
+    var optimalLength: Double  // meters
+    var fuelCapacity: Double   // kg
+    var date: Date
+
+    /// Compare entries (lower volume is better)
+    static func < (lhs: LeaderboardEntry, rhs: LeaderboardEntry) -> Bool {
+        return lhs.volume < rhs.volume
+    }
+}
+
 class GameManager {
     static let shared = GameManager()
 
@@ -146,6 +161,9 @@ class GameManager {
     private(set) var currentSideProfile: SideProfileShape = SideProfileShape.defaultProfile
     private let propulsionManager = PropulsionManager()
     private var simulator: FlightSimulator?
+
+    /// Tracks the name of the currently loaded/saved design file
+    private(set) var currentSaveName: String?
 
     private init() {
         // Singleton
@@ -164,6 +182,7 @@ class GameManager {
             currentTopViewPlanform = bundle.topViewPlanform
             currentPlaneDesign = bundle.planeDesign
             currentCrossSectionPoints = bundle.crossSectionPoints
+            currentSaveName = "Tom"
             print("Loaded 'Tom' design as default")
         } else {
             print("No 'Tom' save found, using built-in defaults")
@@ -183,6 +202,12 @@ class GameManager {
             currentFlightPlan = FlightPlan()
         }
         return currentFlightPlan!
+    }
+
+    /// Update the current flight plan
+    func setFlightPlan(_ plan: FlightPlan) {
+        currentFlightPlan = plan
+        print("Flight plan updated: \(plan.waypoints.count) waypoints")
     }
 
     /// Update the current plane design
@@ -285,7 +310,8 @@ class GameManager {
             success: success,
             finalAltitude: finalAltitude,
             finalSpeed: finalSpeed,
-            score: score
+            score: score,
+            maxTemperature: maxTempEncountered
         )
 
         lastMissionResult = result
@@ -296,10 +322,17 @@ class GameManager {
     private func checkOrbitAchieved(segments: [FlightSegmentResult]) -> Bool {
         guard let lastSegment = segments.last else { return false }
 
-        let altitudeReached = lastSegment.finalAltitude >= PhysicsConstants.orbitAltitude
+        // Convert altitude from feet to meters for comparison
+        let finalAltitudeMeters = lastSegment.finalAltitude * PhysicsConstants.feetToMeters
+        let altitudeReached = finalAltitudeMeters >= PhysicsConstants.orbitAltitude
         let speedReached = lastSegment.finalSpeed >= PhysicsConstants.orbitSpeed
 
         return altitudeReached && speedReached
+    }
+
+    /// Set the last mission result
+    func setLastResult(_ result: MissionResult) {
+        lastMissionResult = result
     }
 
     /// Calculate score based on performance and design efficiency
@@ -350,7 +383,31 @@ class GameManager {
         let topViewPlanform: TopViewPlanform
         let planeDesign: PlaneDesign
         let crossSectionPoints: CrossSectionPoints
+        let flightPlan: FlightPlan?
         let savedDate: Date
+
+        // Custom decoding to handle old saves without flightPlan
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            sideProfile = try container.decode(SideProfileShape.self, forKey: .sideProfile)
+            topViewPlanform = try container.decode(TopViewPlanform.self, forKey: .topViewPlanform)
+            planeDesign = try container.decode(PlaneDesign.self, forKey: .planeDesign)
+            crossSectionPoints = try container.decode(CrossSectionPoints.self, forKey: .crossSectionPoints)
+            flightPlan = try container.decodeIfPresent(FlightPlan.self, forKey: .flightPlan)
+            savedDate = try container.decode(Date.self, forKey: .savedDate)
+        }
+
+        // Standard init
+        init(sideProfile: SideProfileShape, topViewPlanform: TopViewPlanform,
+             planeDesign: PlaneDesign, crossSectionPoints: CrossSectionPoints,
+             flightPlan: FlightPlan?, savedDate: Date) {
+            self.sideProfile = sideProfile
+            self.topViewPlanform = topViewPlanform
+            self.planeDesign = planeDesign
+            self.crossSectionPoints = crossSectionPoints
+            self.flightPlan = flightPlan
+            self.savedDate = savedDate
+        }
     }
 
     // MARK: - Save/Load Methods
@@ -364,6 +421,7 @@ class GameManager {
             topViewPlanform: currentTopViewPlanform,
             planeDesign: currentPlaneDesign,
             crossSectionPoints: currentCrossSectionPoints,
+            flightPlan: currentFlightPlan,
             savedDate: Date()
         )
 
@@ -377,6 +435,7 @@ class GameManager {
 
         // Save to UserDefaults (always)
         UserDefaults.standard.set(data, forKey: "savedDesign_\(name)")
+        currentSaveName = name  // Track the current save name
         print("Design '\(name)' saved successfully")
 
         // In debug builds, also write to Desktop as JSON file
@@ -440,8 +499,13 @@ class GameManager {
         currentTopViewPlanform = bundle.topViewPlanform
         currentPlaneDesign = bundle.planeDesign
         currentCrossSectionPoints = bundle.crossSectionPoints
+        currentFlightPlan = bundle.flightPlan
+        currentSaveName = name  // Track the current save name
 
         print("Design '\(name)' loaded successfully")
+        if let flightPlan = bundle.flightPlan {
+            print("Flight plan loaded: \(flightPlan.waypoints.count) waypoints")
+        }
         return true
     }
 
@@ -455,10 +519,78 @@ class GameManager {
             .sorted()
     }
 
+    /// Metadata for a saved design file
+    struct SaveFileMetadata {
+        let name: String
+        let savedDate: Date
+        let aircraftLength: Double
+        let volume: Double?  // Internal volume if calculable
+        let hasFlightPlan: Bool
+    }
+
+    /// Get metadata for a saved design without loading it into current state
+    /// - Parameter name: The name of the design
+    /// - Returns: Metadata struct, or nil if design doesn't exist
+    func getSaveFileMetadata(name: String) -> SaveFileMetadata? {
+        guard let data = UserDefaults.standard.data(forKey: "savedDesign_\(name)"),
+              let bundle = try? JSONDecoder().decode(AircraftDesignBundle.self, from: data) else {
+            return nil
+        }
+
+        // Calculate volume by temporarily setting the design (without affecting current state)
+        // We'll save the current state, load the bundle, calculate volume, then restore
+        let savedCurrentState = (
+            sideProfile: currentSideProfile,
+            topViewPlanform: currentTopViewPlanform,
+            planeDesign: currentPlaneDesign,
+            crossSectionPoints: currentCrossSectionPoints
+        )
+
+        // Temporarily load the design to calculate volume
+        currentSideProfile = bundle.sideProfile
+        currentTopViewPlanform = bundle.topViewPlanform
+        currentPlaneDesign = bundle.planeDesign
+        currentCrossSectionPoints = bundle.crossSectionPoints
+
+        let volume = AircraftVolumeModel.calculateInternalVolume()
+
+        // Restore the previous state
+        currentSideProfile = savedCurrentState.sideProfile
+        currentTopViewPlanform = savedCurrentState.topViewPlanform
+        currentPlaneDesign = savedCurrentState.planeDesign
+        currentCrossSectionPoints = savedCurrentState.crossSectionPoints
+
+        return SaveFileMetadata(
+            name: name,
+            savedDate: bundle.savedDate,
+            aircraftLength: bundle.topViewPlanform.aircraftLength,
+            volume: volume,
+            hasFlightPlan: bundle.flightPlan != nil
+        )
+    }
+
     /// Delete a saved design by name
     /// - Parameter name: The name of the design to delete
     func deleteDesign(name: String) {
         UserDefaults.standard.removeObject(forKey: "savedDesign_\(name)")
         print("Design '\(name)' deleted")
+    }
+
+    /// Update the aircraft length in the current design and auto-save
+    /// Called when optimization completes with a converged length
+    /// - Parameter optimizedLength: The optimized aircraft length in meters
+    /// - Returns: true if update and save was successful, false otherwise
+    func updateOptimizedLength(_ optimizedLength: Double) -> Bool {
+        // Update the current design with the optimized length
+        currentTopViewPlanform.aircraftLength = optimizedLength
+        print("Updated aircraft length to \(optimizedLength) m")
+
+        // Auto-save if we have a current save name
+        if let saveName = currentSaveName {
+            return saveDesign(name: saveName)
+        } else {
+            // No save name set - save as "Optimized Design" by default
+            return saveDesign(name: "Optimized Design")
+        }
     }
 }

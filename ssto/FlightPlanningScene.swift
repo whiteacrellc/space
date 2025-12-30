@@ -19,6 +19,8 @@ class FlightPlanningScene: SKScene {
     private var addButton: SKLabelNode?
     private var simulateButton: SKLabelNode?
     private var backButton: SKLabelNode?
+    private var saveButton: SKLabelNode?
+    private var deleteButton: SKLabelNode?
 
     // Graph elements
     private var graphNode: SKNode?
@@ -28,8 +30,8 @@ class FlightPlanningScene: SKScene {
     private var yAxisLabels: [SKLabelNode] = []
 
     // Graph parameters
-    private var maxTimeMinutes: CGFloat = 60.0 // X-axis max (minutes)
-    private var maxAltitudeKm: CGFloat = 20.0  // Y-axis max (kilometers)
+    private var maxMach: CGFloat = 24.0         // X-axis max (Mach number)
+    private var maxAltitudeMeters: CGFloat = 200000.0  // Y-axis max (meters)
 
     // Current waypoint being edited
     private var currentAltitudeThousands: Int = 100 // In thousands of feet
@@ -64,15 +66,14 @@ class FlightPlanningScene: SKScene {
         let inputBoxX = size.width - 150 - 50 // 10px from right, 50 is half the box width (100/2)
         let startY = size.height - 40
 
-        let editorTitle = SKLabelNode(text: "New Waypoint")
-        editorTitle.fontName = "AvenirNext-Medium"
-        editorTitle.fontSize = 20
-        editorTitle.fontColor = .cyan
-        editorTitle.position = CGPoint(x: inputBoxX, y: startY)
-        addChild(editorTitle)
+        // Delete last waypoint button
+        deleteButton = createSmallButton(text: "Delete", position: CGPoint(x: inputBoxX + 80, y: startY + 10), name: "delete_waypoint")
+        if let button = deleteButton {
+            addChild(button)
+        }
 
         // Altitude input
-        let altLabel = SKLabelNode(text: "Altitude (x1000 ft):")
+        let altLabel = SKLabelNode(text: "Altitude (m):")
         altLabel.fontName = "AvenirNext-Regular"
         altLabel.fontSize = 16
         altLabel.fontColor = .white
@@ -84,7 +85,7 @@ class FlightPlanningScene: SKScene {
             position: CGPoint(x: inputBoxX + 50, y: startY - 35),
             width: 100,
             height: 35,
-            initialValue: "100",
+            initialValue: "30000",
             inputType: .integer
         )
         if let inputBox = altitudeInputBox {
@@ -135,14 +136,20 @@ class FlightPlanningScene: SKScene {
         }
 
         // Start simulation button (under add waypoint)
-        simulateButton = createButton(text: "Start Simulation", position: CGPoint(x: inputBoxX, y: startY - 260), name: "simulate")
+        simulateButton = createButton(text: "Start Simulation", position: CGPoint(x: inputBoxX, y: startY - 248), name: "simulate")
         if let button = simulateButton {
             addChild(button)
         }
 
         // Back button (under start simulation)
-        backButton = createButton(text: "Back to Menu", position: CGPoint(x: inputBoxX, y: startY - 320), name: "back")
+        backButton = createButton(text: "Back to Menu", position: CGPoint(x: inputBoxX, y: startY - 296), name: "back")
         if let button = backButton {
+            addChild(button)
+        }
+
+        // Save button (under back button)
+        saveButton = createButton(text: "Save Game", position: CGPoint(x: inputBoxX, y: startY - 344), name: "save_game")
+        if let button = saveButton {
             addChild(button)
         }
     }
@@ -185,14 +192,14 @@ class FlightPlanningScene: SKScene {
         drawGraphGrid(yAxisX: yAxisX, centerY: graphCenterY, width: graphWidth, height: graphHeight)
 
         // Add axis titles
-        let xTitle = SKLabelNode(text: "Time (minutes)")
+        let xTitle = SKLabelNode(text: "Mach")
         xTitle.fontName = "AvenirNext-Medium"
         xTitle.fontSize = 14
         xTitle.fontColor = .white
         xTitle.position = CGPoint(x: yAxisX + graphWidth / 2, y: graphCenterY - graphHeight / 2 - 40)
         graphNode?.addChild(xTitle)
 
-        let yTitle = SKLabelNode(text: "Altitude (km)")
+        let yTitle = SKLabelNode(text: "Altitude (m)")
         yTitle.fontName = "AvenirNext-Medium"
         yTitle.fontSize = 14
         yTitle.fontColor = .white
@@ -211,7 +218,7 @@ class FlightPlanningScene: SKScene {
         xAxisLabels.removeAll()
         yAxisLabels.removeAll()
 
-        // X-axis labels (time in minutes)
+        // X-axis labels (Mach number)
         let numXDivisions = 6
         for i in 0...numXDivisions {
             let fraction = CGFloat(i) / CGFloat(numXDivisions)
@@ -231,8 +238,8 @@ class FlightPlanningScene: SKScene {
             }
 
             // Label
-            let timeValue = Int(maxTimeMinutes * fraction)
-            let label = SKLabelNode(text: "\(timeValue)")
+            let machValue = maxMach * fraction
+            let label = SKLabelNode(text: String(format: "%.0f", machValue))
             label.fontName = "AvenirNext-Regular"
             label.fontSize = 12
             label.fontColor = .gray
@@ -241,7 +248,7 @@ class FlightPlanningScene: SKScene {
             xAxisLabels.append(label)
         }
 
-        // Y-axis labels (altitude in km)
+        // Y-axis labels (altitude in meters, linear scale)
         let numYDivisions = 5
         for i in 0...numYDivisions {
             let fraction = CGFloat(i) / CGFloat(numYDivisions)
@@ -260,13 +267,13 @@ class FlightPlanningScene: SKScene {
                 graphNode?.addChild(gridLine)
             }
 
-            // Label
-            let altValue = Int(maxAltitudeKm * fraction)
-            let label = SKLabelNode(text: "\(altValue)")
+            // Label - using linear scale
+            let altValue = Double(maxAltitudeMeters) * Double(fraction)
+            let label = SKLabelNode(text: String(format: "%.0f", altValue))
             label.fontName = "AvenirNext-Regular"
             label.fontSize = 12
             label.fontColor = .gray
-            label.position = CGPoint(x: xPos + 25, y: yPos - 5)
+            label.position = CGPoint(x: xPos + 30, y: yPos - 5)
             label.horizontalAlignmentMode = .left
             graphNode?.addChild(label)
             yAxisLabels.append(label)
@@ -275,44 +282,21 @@ class FlightPlanningScene: SKScene {
 
     private func updateGraph() {
         // Clear old graph elements
-        for point in graphPoints {
-            point.removeFromParent()
-        }
-        for line in graphLines {
-            line.removeFromParent()
-        }
+        graphNode?.removeAllChildren()
         graphPoints.removeAll()
         graphLines.removeAll()
 
-        // Calculate time-altitude points from waypoints
-        var timePoints: [(time: Double, altitude: Double)] = []
-        var cumulativeTime: Double = 0.0
+        // Calculate mach-altitude points from waypoints
+        var machAltitudePoints: [(mach: Double, altitude: Double)] = []
 
-        for i in 0..<flightPlan.waypoints.count {
-            let waypoint = flightPlan.waypoints[i]
-
-            if i > 0 {
-                // Calculate time to reach this waypoint from previous
-                let prevWaypoint = flightPlan.waypoints[i - 1]
-                let altitudeDiff = abs(waypoint.altitude - prevWaypoint.altitude) // feet
-
-                // Estimate horizontal distance (simplified - assumes 45-degree climb/descent)
-                let verticalDistance = altitudeDiff
-                let horizontalDistance = sqrt(2.0) * verticalDistance // Rough estimate
-
-                // Calculate time based on average speed between waypoints
-                let averageSpeed = (prevWaypoint.speed + waypoint.speed) / 2.0
-                let speedFeetPerSecond = averageSpeed * PhysicsConstants.speedOfSoundSeaLevel * PhysicsConstants.metersToFeet
-                let timeSeconds = horizontalDistance / speedFeetPerSecond
-                cumulativeTime += timeSeconds
-            }
-
-            let altitudeKm = waypoint.altitude * PhysicsConstants.feetToMeters / 1000.0
-            timePoints.append((time: cumulativeTime / 60.0, altitude: altitudeKm)) // Convert to minutes
+        for waypoint in flightPlan.waypoints {
+            let altitudeMeters = waypoint.altitude * PhysicsConstants.feetToMeters
+            let mach = waypoint.speed
+            machAltitudePoints.append((mach: mach, altitude: altitudeMeters))
         }
 
         // Adapt graph scale if needed
-        adaptGraphScale(timePoints: timePoints)
+        adaptGraphScale(machAltitudePoints: machAltitudePoints)
 
         // Draw points and lines
         let yAxisX: CGFloat = 10
@@ -320,12 +304,15 @@ class FlightPlanningScene: SKScene {
         let graphHeight = size.height * 0.6
         let graphCenterY = size.height * 0.45
 
-        for i in 0..<timePoints.count {
-            let point = timePoints[i]
+        for i in 0..<machAltitudePoints.count {
+            let point = machAltitudePoints[i]
 
             // Calculate screen position
-            let xFraction = CGFloat(point.time / maxTimeMinutes)
-            let yFraction = CGFloat(point.altitude / maxAltitudeKm)
+            // X-axis: linear scale for Mach
+            let xFraction = CGFloat(point.mach / Double(maxMach))
+
+            // Y-axis: linear scale for altitude
+            let yFraction = CGFloat(point.altitude / Double(maxAltitudeMeters))
 
             let screenX = yAxisX + graphWidth * xFraction
             let screenY = graphCenterY - graphHeight / 2 + graphHeight * yFraction
@@ -341,9 +328,9 @@ class FlightPlanningScene: SKScene {
 
             // Draw line from previous point
             if i > 0 {
-                let prevPoint = timePoints[i - 1]
-                let prevXFraction = CGFloat(prevPoint.time / maxTimeMinutes)
-                let prevYFraction = CGFloat(prevPoint.altitude / maxAltitudeKm)
+                let prevPoint = machAltitudePoints[i - 1]
+                let prevXFraction = CGFloat(prevPoint.mach / Double(maxMach))
+                let prevYFraction = CGFloat(prevPoint.altitude / Double(maxAltitudeMeters))
 
                 let prevScreenX = yAxisX + graphWidth * prevXFraction
                 let prevScreenY = graphCenterY - graphHeight / 2 + graphHeight * prevYFraction
@@ -359,25 +346,72 @@ class FlightPlanningScene: SKScene {
                 graphLines.append(line)
             }
         }
+
+        // Always draw max altitude reference lines for jet, ramjet, and scramjet
+        drawAltitudeLimitLines(graphWidth: graphWidth, graphHeight: graphHeight, graphCenterY: graphCenterY, yAxisX: yAxisX)
     }
 
-    private func adaptGraphScale(timePoints: [(time: Double, altitude: Double)]) {
-        // Find max values in data
-        var maxTime: Double = 60.0 // Default to 60 minutes
-        var maxAlt: Double = 20.0  // Default to 20 km
+    private func drawAltitudeLimitLines(graphWidth: CGFloat, graphHeight: CGFloat, graphCenterY: CGFloat, yAxisX: CGFloat) {
+        // Define engine max altitudes with colors (altitudes in meters)
+        let engineLimits: [(altitude: Double, name: String, color: UIColor)] = [
+            (JetModule.maxAltitude, "Jet", UIColor.systemBlue),
+            (RamjetModule.maxAltitude, "Ramjet", UIColor.systemOrange),
+            (ScramjetModule.maxAltitude, "Scramjet", UIColor.systemPurple)
+        ]
 
-        for point in timePoints {
-            maxTime = max(maxTime, point.time)
+        for engineLimit in engineLimits {
+            let altitudeMeters = engineLimit.altitude
+            // Linear scale for altitude
+            let yFraction = CGFloat(altitudeMeters / Double(maxAltitudeMeters))
+            let screenY = graphCenterY - graphHeight / 2 + graphHeight * yFraction
+
+            // Only draw if within visible range
+            if yFraction >= 0 && yFraction <= 1.0 {
+                let line = SKShapeNode()
+                let linePath = CGMutablePath()
+                linePath.move(to: CGPoint(x: yAxisX, y: screenY))
+                linePath.addLine(to: CGPoint(x: yAxisX + graphWidth, y: screenY))
+                line.path = linePath
+                line.strokeColor = engineLimit.color
+                line.lineWidth = 1.5
+                line.alpha = 0.5
+
+                // Add dashed pattern
+                let pattern: [CGFloat] = [4, 4]
+                line.path = linePath.copy(dashingWithPhase: 0, lengths: pattern)
+
+                graphNode?.addChild(line)
+                graphLines.append(line)
+
+                // Add label
+                let label = SKLabelNode(text: engineLimit.name)
+                label.fontName = "AvenirNext-Regular"
+                label.fontSize = 9
+                label.fontColor = engineLimit.color
+                label.position = CGPoint(x: yAxisX + graphWidth + 30, y: screenY - 5)
+                label.horizontalAlignmentMode = .left
+                graphNode?.addChild(label)
+            }
+        }
+    }
+
+    private func adaptGraphScale(machAltitudePoints: [(mach: Double, altitude: Double)]) {
+        // Find max values in data
+        var maxMachValue: Double = 24.0 // Default to Mach 24
+        var maxAlt: Double = 200000.0  // Default to 200,000 meters
+
+        for point in machAltitudePoints {
+            maxMachValue = max(maxMachValue, point.mach)
             maxAlt = max(maxAlt, point.altitude)
         }
 
         // Round up to nice values
-        maxTimeMinutes = CGFloat(ceil(maxTime / 10.0) * 10.0) // Round to nearest 10 minutes
-        maxAltitudeKm = CGFloat(ceil(maxAlt / 5.0) * 5.0)     // Round to nearest 5 km
+        maxMach = CGFloat(ceil(maxMachValue / 5.0) * 5.0) // Round to nearest 5 Mach
+        maxAltitudeMeters = CGFloat(ceil(maxAlt / 50000.0) * 50000.0)     // Round to nearest 50,000 m
 
         // Ensure minimum scale
-        maxTimeMinutes = max(60, maxTimeMinutes)
-        maxAltitudeKm = max(20, maxAltitudeKm)
+        maxMach = max(24, maxMach)
+        maxAltitudeMeters = max(200000, maxAltitudeMeters)
 
         // Redraw grid with new scale
         let yAxisX: CGFloat = 10
@@ -385,6 +419,64 @@ class FlightPlanningScene: SKScene {
         let graphHeight = size.height * 0.6
         let graphCenterY = size.height * 0.45
         drawGraphGrid(yAxisX: yAxisX, centerY: graphCenterY, width: graphWidth, height: graphHeight)
+    }
+
+    /// Calculate time to travel between two waypoints with acceleration limits
+    /// - Parameters:
+    ///   - from: Starting waypoint
+    ///   - to: Ending waypoint
+    /// - Returns: Time in seconds
+    private func calculateSegmentTime(from: Waypoint, to: Waypoint) -> Double {
+        // Maximum acceleration: 3g = 3 * 9.81 m/s²
+        let maxAcceleration = 3.0 * 9.81 // m/s²
+
+        // Get average altitude for speed of sound calculation
+        let avgAltitudeFeet = (from.altitude + to.altitude) / 2.0
+        let avgAltitudeMeters = avgAltitudeFeet * PhysicsConstants.feetToMeters
+
+        // Calculate speed of sound at average altitude
+        let speedOfSound = AtmosphereModel.speedOfSound(at: avgAltitudeMeters) // m/s
+
+        // Convert Mach speeds to m/s
+        let v0 = from.speed * speedOfSound // m/s
+        let vf = to.speed * speedOfSound   // m/s
+
+        // Calculate total distance to travel
+        let altitudeDiffMeters = abs(to.altitude - from.altitude) * PhysicsConstants.feetToMeters
+        // Assume approximately 45-degree climb angle for distance estimation
+        let totalDistance = sqrt(2.0) * altitudeDiffMeters // m
+
+        // Phase 1: Acceleration/Deceleration
+        let deltaV = abs(vf - v0) // m/s
+        let accelerationTime = deltaV / maxAcceleration // seconds
+
+        // Distance covered during acceleration (using average velocity during acceleration)
+        let avgSpeedDuringAccel = (v0 + vf) / 2.0
+        let accelerationDistance = avgSpeedDuringAccel * accelerationTime
+
+        // Phase 2: Constant velocity (if any distance remains)
+        var constantVelocityTime = 0.0
+        if accelerationDistance < totalDistance {
+            let remainingDistance = totalDistance - accelerationDistance
+            // Use final velocity for constant velocity phase
+            constantVelocityTime = remainingDistance / max(1.0, vf)
+        }
+
+        let totalTime = accelerationTime + constantVelocityTime
+
+        #if DEBUG
+        print("─────────────────────────────────────")
+        print("Segment: Mach \(String(format: "%.1f", from.speed)) → Mach \(String(format: "%.1f", to.speed))")
+        print("  Altitude: \(Int(from.altitude * PhysicsConstants.feetToMeters))m → \(Int(to.altitude * PhysicsConstants.feetToMeters))m")
+        print("  Speed: \(Int(v0)) m/s → \(Int(vf)) m/s")
+        print("  Distance: \(Int(totalDistance)) m")
+        print("  Accel phase: \(String(format: "%.1f", accelerationTime))s over \(Int(accelerationDistance))m")
+        print("  Const vel phase: \(String(format: "%.1f", constantVelocityTime))s")
+        print("  Total time: \(String(format: "%.1f", totalTime))s (\(String(format: "%.2f", totalTime/60.0)) min)")
+        #endif
+
+        // Safety check: ensure minimum time
+        return max(1.0, totalTime) // At least 1 second
     }
 
     private func refreshWaypointList() {
@@ -409,8 +501,8 @@ class FlightPlanningScene: SKScene {
         waypointLabels.append(listTitle)
 
         for (index, waypoint) in flightPlan.waypoints.enumerated() {
-            let altThousands = Int(waypoint.altitude / 1000)
-            let text = "WP\(index + 1): \(altThousands)k ft, M\(String(format: "%.1f", waypoint.speed)), \(waypoint.engineMode.rawValue)"
+            let altitudeMeters = Int(waypoint.altitude * PhysicsConstants.feetToMeters)
+            let text = "WP\(index + 1): \(altitudeMeters)m, M\(String(format: "%.1f", waypoint.speed)), \(waypoint.engineMode.rawValue)"
             let label = SKLabelNode(text: text)
             label.fontName = "AvenirNext-Regular"
             label.fontSize = 14
@@ -588,10 +680,14 @@ class FlightPlanningScene: SKScene {
             cycleEngine()
         case "add_waypoint":
             addWaypoint()
+        case "delete_waypoint":
+            deleteLastWaypoint()
         case "simulate":
             startSimulation()
         case "back":
             returnToMenu()
+        case "save_game":
+            saveGameState()
         default:
             break
         }
@@ -609,19 +705,119 @@ class FlightPlanningScene: SKScene {
     private func addWaypoint() {
         // Get values from text boxes
         guard let altText = altitudeInputBox?.getValue(),
-              let altThousands = Int(altText),
+              let altMeters = Int(altText),
               let speedText = speedInputBox?.getValue(),
               let speed = Double(speedText) else {
             print("Invalid input values")
             return
         }
 
-        let altitude = Double(altThousands) * 1000.0 // Convert to feet
+        let altitude = Double(altMeters) * PhysicsConstants.metersToFeet // Convert meters to feet
         let waypoint = Waypoint(altitude: altitude, speed: speed, engineMode: currentEngine)
+
+        // Validate thermal limits for air-breathing engine waypoints
+        if currentEngine == .scramjet || currentEngine == .ramjet || currentEngine == .jet {
+            guard let previousWaypoint = flightPlan.waypoints.last else {
+                flightPlan.addWaypoint(waypoint)
+                refreshWaypointList()
+                updateGraph()
+                return
+            }
+
+            // Get plane design for thermal calculations
+            let planeDesign = GameManager.shared.getPlaneDesign()
+
+            // Validate thermal limits using appropriate module
+            let validation: (isSafe: Bool, maxTemp: Double, margin: Double, message: String)
+
+            switch currentEngine {
+            case .scramjet:
+                validation = ScramjetModule.validateThermalLimits(
+                    startWaypoint: previousWaypoint,
+                    endWaypoint: waypoint,
+                    planeDesign: planeDesign
+                )
+            case .ramjet:
+                validation = RamjetModule.validateThermalLimits(
+                    startWaypoint: previousWaypoint,
+                    endWaypoint: waypoint,
+                    planeDesign: planeDesign
+                )
+            case .jet:
+                validation = JetModule.validateThermalLimits(
+                    startWaypoint: previousWaypoint,
+                    endWaypoint: waypoint,
+                    planeDesign: planeDesign
+                )
+            default:
+                // Should not reach here given the if condition
+                validation = (true, 0, 0, "")
+            }
+
+            if !validation.isSafe {
+                // Show alert and prevent adding waypoint
+                #if os(iOS)
+                showThermalAlert(message: validation.message)
+                #else
+                print(validation.message)
+                #endif
+                return
+            }
+        }
+
+        // Waypoint is valid, add it
         flightPlan.addWaypoint(waypoint)
         refreshWaypointList()
         updateGraph()
     }
+
+    private func deleteLastWaypoint() {
+        // Get the index of the last waypoint
+        let lastIndex = flightPlan.waypoints.count - 1
+
+        // Cannot delete if only the starting waypoint remains
+        if lastIndex <= 0 {
+            #if os(iOS)
+            showInfoAlert(message: "Cannot delete the starting waypoint.")
+            #else
+            print("Cannot delete the starting waypoint.")
+            #endif
+            return
+        }
+
+        // Remove the last waypoint
+        flightPlan.removeWaypoint(at: lastIndex)
+        refreshWaypointList()
+        updateGraph()
+    }
+
+    #if os(iOS)
+    private func showInfoAlert(message: String) {
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        let alert = UIAlertController(
+            title: "Info",
+            message: message,
+            preferredStyle: .alert
+        )
+
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        viewController.present(alert, animated: true)
+    }
+
+    private func showThermalAlert(message: String) {
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        let alert = UIAlertController(
+            title: "⚠️ Thermal Limit Exceeded",
+            message: message,
+            preferredStyle: .alert
+        )
+
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        viewController.present(alert, animated: true)
+    }
+    #endif
 
     private func startSimulation() {
         guard flightPlan.isValidForFlight() else {
@@ -629,10 +825,11 @@ class FlightPlanningScene: SKScene {
             return
         }
 
+        // Go to optimization scene first to find optimal aircraft length
         let transition = SKTransition.fade(withDuration: 0.5)
-        let simulationScene = SimulationScene(size: size)
-        simulationScene.scaleMode = .aspectFill
-        view?.presentScene(simulationScene, transition: transition)
+        let optimizationScene = OptimizationScene(size: size)
+        optimizationScene.scaleMode = .aspectFill
+        view?.presentScene(optimizationScene, transition: transition)
     }
 
     private func returnToMenu() {
@@ -641,5 +838,81 @@ class FlightPlanningScene: SKScene {
         menuScene.scaleMode = .aspectFill
         view?.presentScene(menuScene, transition: transition)
     }
+
+    private func saveGameState() {
+        #if os(iOS)
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        let alert = UIAlertController(
+            title: "Save Game",
+            message: "Enter a name for this save",
+            preferredStyle: .alert
+        )
+
+        alert.addTextField { textField in
+            textField.placeholder = "Save Name"
+            textField.autocapitalizationType = .words
+        }
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
+            guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces),
+                  !name.isEmpty else {
+                self?.showSaveAlert(title: "Error", message: "Please enter a valid name")
+                return
+            }
+
+            // Check if save already exists
+            let existingNames = GameManager.shared.getSavedDesignNames()
+            if existingNames.contains(name) {
+                self?.showOverwriteConfirmation(name: name)
+            } else {
+                self?.performSave(name: name)
+            }
+        })
+
+        viewController.present(alert, animated: true)
+        #endif
+    }
+
+    #if os(iOS)
+    private func showOverwriteConfirmation(name: String) {
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        let alert = UIAlertController(
+            title: "Overwrite Save?",
+            message: "A save named '\(name)' already exists. Overwrite it?",
+            preferredStyle: .alert
+        )
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Overwrite", style: .destructive) { [weak self] _ in
+            self?.performSave(name: name)
+        })
+
+        viewController.present(alert, animated: true)
+    }
+
+    private func performSave(name: String) {
+        // Save the current flight plan to GameManager first
+        GameManager.shared.setFlightPlan(flightPlan)
+
+        // Save the entire game state (aircraft design + flight plan)
+        if GameManager.shared.saveDesign(name: name) {
+            showSaveAlert(title: "Success", message: "Game saved as '\(name)'")
+        } else {
+            showSaveAlert(title: "Error", message: "Failed to save game")
+        }
+    }
+
+    private func showSaveAlert(title: String, message: String) {
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        viewController.present(alert, animated: true)
+    }
+    #endif
 }
 

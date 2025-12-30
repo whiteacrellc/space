@@ -73,30 +73,6 @@ class WireframeViewController: UIViewController {
         titleLabel.textAlignment = .center
         headerView.addSubview(titleLabel)
 
-        // Save Button
-        var saveConfig = UIButton.Configuration.filled()
-        saveConfig.title = "Save"
-        saveConfig.baseForegroundColor = .green
-        saveConfig.baseBackgroundColor = UIColor.white.withAlphaComponent(0.1)
-        saveConfig.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
-        saveConfig.cornerStyle = .medium
-        
-        let saveButton = UIButton(configuration: saveConfig)
-        saveButton.addTarget(self, action: #selector(saveButtonTapped), for: .touchUpInside)
-        headerView.addSubview(saveButton)
-
-        // Load Button
-        var loadConfig = UIButton.Configuration.filled()
-        loadConfig.title = "Load"
-        loadConfig.baseForegroundColor = .orange
-        loadConfig.baseBackgroundColor = UIColor.white.withAlphaComponent(0.1)
-        loadConfig.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
-        loadConfig.cornerStyle = .medium
-        
-        let loadButton = UIButton(configuration: loadConfig)
-        loadButton.addTarget(self, action: #selector(loadButtonTapped), for: .touchUpInside)
-        headerView.addSubview(loadButton)
-
         // Zoom Controls
         var zoomInConfig = UIButton.Configuration.filled()
         zoomInConfig.title = "+"
@@ -121,8 +97,6 @@ class WireframeViewController: UIViewController {
         headerView.translatesAutoresizingMaskIntoConstraints = false
         doneButton.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        saveButton.translatesAutoresizingMaskIntoConstraints = false
-        loadButton.translatesAutoresizingMaskIntoConstraints = false
         zoomInButton.translatesAutoresizingMaskIntoConstraints = false
         zoomOutButton.translatesAutoresizingMaskIntoConstraints = false
 
@@ -137,12 +111,6 @@ class WireframeViewController: UIViewController {
 
             titleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
-
-            saveButton.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 20),
-            saveButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
-
-            loadButton.leadingAnchor.constraint(equalTo: saveButton.trailingAnchor, constant: 10),
-            loadButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
 
             // Zoom buttons on the right
             zoomInButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -20),
@@ -335,115 +303,6 @@ class WireframeViewController: UIViewController {
 
     @objc private func doneButtonTapped() {
         dismiss(animated: true, completion: nil)
-    }
-
-    // MARK: - Save/Load Handlers
-
-    @objc private func saveButtonTapped() {
-        let alert = UIAlertController(
-            title: "Save Design",
-            message: "Enter a name for this aircraft design",
-            preferredStyle: .alert
-        )
-
-        alert.addTextField { textField in
-            textField.placeholder = "Design Name"
-            textField.autocapitalizationType = .words
-        }
-
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-
-        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak alert] _ in
-            guard let name = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespaces),
-                  !name.isEmpty else {
-                self?.showAlert(title: "Error", message: "Please enter a valid name")
-                return
-            }
-
-            // Check if design already exists
-            let existingNames = GameManager.shared.getSavedDesignNames()
-            if existingNames.contains(name) {
-                self?.showOverwriteConfirmation(name: name)
-            } else {
-                self?.performSave(name: name)
-            }
-        })
-
-        present(alert, animated: true)
-    }
-
-    private func showOverwriteConfirmation(name: String) {
-        let alert = UIAlertController(
-            title: "Overwrite Design?",
-            message: "A design named '\(name)' already exists. Overwrite it?",
-            preferredStyle: .alert
-        )
-
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Overwrite", style: .destructive) { [weak self] _ in
-            self?.performSave(name: name)
-        })
-
-        present(alert, animated: true)
-    }
-
-    private func performSave(name: String) {
-        if GameManager.shared.saveDesign(name: name) {
-            showAlert(title: "Success", message: "Design '\(name)' saved successfully")
-        } else {
-            showAlert(title: "Error", message: "Failed to save design")
-        }
-    }
-
-    @objc private func loadButtonTapped() {
-        let savedDesigns = GameManager.shared.getSavedDesignNames()
-
-        guard !savedDesigns.isEmpty else {
-            showAlert(title: "No Designs", message: "No saved designs found")
-            return
-        }
-
-        let alert = UIAlertController(
-            title: "Load Design",
-            message: "Select a design to load",
-            preferredStyle: .actionSheet
-        )
-
-        for name in savedDesigns {
-            alert.addAction(UIAlertAction(title: name, style: .default) { [weak self] _ in
-                self?.performLoad(name: name)
-            })
-        }
-
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-
-        // iPad support
-        if let popover = alert.popoverPresentationController {
-            popover.sourceView = view
-            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
-            popover.permittedArrowDirections = []
-        }
-
-        present(alert, animated: true)
-    }
-
-    private func performLoad(name: String) {
-        if GameManager.shared.loadDesign(name: name) {
-            // Clear the local shapeView so generateWireframe uses the loaded data from GameManager
-            self.shapeView = nil
-            self.topViewShape = nil
-
-            showAlert(title: "Success", message: "Design '\(name)' loaded successfully")
-            generateWireframe() // Refresh display with loaded design
-        } else {
-            showAlert(title: "Error", message: "Failed to load design")
-        }
-    }
-
-    private func showAlert(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
     }
 
     private func setupScene() {
@@ -720,15 +579,23 @@ class WireframeViewController: UIViewController {
         // Calculate wing span (total span, both sides)
         let totalWingSpan = wingSpanMeters * 2.0
 
-        // Calculate mass
-        let dryMassKg = 15000.0  // From PhysicsConstants
+        // Calculate mass - now dynamic based on flight plan and design
+        let flightPlan = GameManager.shared.getFlightPlan()
+        let planeDesign = GameManager.shared.getPlaneDesign()
+
+        let dryMassKg = PhysicsConstants.calculateDryMass(
+            volumeM3: volumeInMeters,
+            waypoints: flightPlan.waypoints,
+            planeDesign: planeDesign,
+            maxTemperature: 800.0 // Estimated
+        )
+
         let fuelDensityKgPerLiter = 0.08  // From PhysicsConstants
         let volumeInLiters = volumeInMeters * 1000.0  // Convert m³ to liters
         let fuelCapacityKg = volumeInLiters * fuelDensityKgPerLiter
         let totalMassKg = dryMassKg + fuelCapacityKg
 
         // Calculate drag coefficient
-        let planeDesign = GameManager.shared.getPlaneDesign()
         let dragCalculator = DragCalculator(planeDesign: planeDesign)
         let mach = 0.5
         let altitudeFeet = 50000.0
@@ -996,37 +863,48 @@ class WireframeViewController: UIViewController {
     }
 
     private func addPayloadBox(centerOffset: SCNVector3, profile: SideProfileShape) {
-        // Payload box: 8m wide × 8m tall × 16m long
-        // Position in the payload region (middle of fuselage)
-        
-        let boxLength: CGFloat = 16.0
-        let boxWidth: CGFloat = 8.0
-        let boxHeight: CGFloat = 8.0
-        
+        // Payload box: 20m long × 5m wide × 5m tall
+        // Position centered in the middle of aircraft
+
+        // Dimensions in meters
+        let boxLengthMeters: CGFloat = 20.0
+        let boxWidthMeters: CGFloat = 5.0
+        let boxHeightMeters: CGFloat = 5.0
+
+        // Scale factor: canvas units per meter (canvas is ~800 units for ~70 meters)
+        let canvasWidth: CGFloat = 800.0
+        let aircraftLengthMeters: CGFloat = 70.0
+        let scale = canvasWidth / aircraftLengthMeters  // ~11.43 units per meter
+
+        // Convert to canvas units
+        let boxLength = boxLengthMeters * scale
+        let boxWidth = boxWidthMeters * scale
+        let boxHeight = boxHeightMeters * scale
+
         let box = SCNBox(width: boxLength, height: boxWidth, length: boxHeight, chamferRadius: 0.0)
-        
+
         let material = SCNMaterial()
-        material.diffuse.contents = UIColor.green
-        material.fillMode = .lines  // Wireframe
+        material.diffuse.contents = UIColor.orange.withAlphaComponent(0.8)
+        material.fillMode = .fill  // Solid
         material.lightingModel = .constant
+        material.isDoubleSided = true
         box.firstMaterial = material
-        
+
         payloadNode?.removeFromParentNode()
         payloadNode = SCNNode(geometry: box)
-        
-        // Position at middle of fuselage
+
+        // Position centered at middle of aircraft
         let midX = (CGFloat(profile.frontStart.x) + CGFloat(profile.exhaustEnd.x)) / 2.0
-        
-        // Get floor height at this X
-        let (_, bottomZ) = getProfileHeight(at: Double(midX), profile: profile)
-        let zPos = CGFloat(bottomZ) + boxHeight / 2.0
-        
+
+        // The centerline in side profile is at inletStart.y, which becomes Z in 3D
+        let centerlineZ = CGFloat(profile.frontStart.y)
+
         payloadNode!.position = SCNVector3(
-            Float(midX) - centerOffset.x,
-            0 - centerOffset.y,
-            Float(zPos) - centerOffset.z
+            Float(midX) - centerOffset.x,         // X: centered longitudinally
+            0 - centerOffset.y,                    // Y: centered spanwise (width)
+            Float(centerlineZ) - centerOffset.z    // Z: centered on aircraft centerline
         )
-        
+
         wireframeNode?.addChildNode(payloadNode!)
     }
     
@@ -1067,35 +945,54 @@ class WireframeViewController: UIViewController {
     }
     
     private func addPilotBox(centerOffset: SCNVector3, profile: SideProfileShape) {
-        // Pilot box: Cockpit/crew compartment near the nose
-        let boxLength: CGFloat = 6.0
-        let boxWidth: CGFloat = 4.0
-        let boxHeight: CGFloat = 3.0
-        
+        // Pilot box: 6m long × 6m wide × 3m tall
+        // Positioned in front of payload box with right edge aligned
+
+        // Dimensions in meters
+        let boxLengthMeters: CGFloat = 6.0
+        let boxWidthMeters: CGFloat = 6.0
+        let boxHeightMeters: CGFloat = 3.0
+        let payloadLengthMeters: CGFloat = 20.0
+
+        // Scale factor: canvas units per meter (canvas is ~800 units for ~70 meters)
+        let canvasWidth: CGFloat = 800.0
+        let aircraftLengthMeters: CGFloat = 70.0
+        let scale = canvasWidth / aircraftLengthMeters  // ~11.43 units per meter
+
+        // Convert to canvas units
+        let boxLength = boxLengthMeters * scale
+        let boxWidth = boxWidthMeters * scale
+        let boxHeight = boxHeightMeters * scale
+        let payloadLength = payloadLengthMeters * scale
+
         let box = SCNBox(width: boxLength, height: boxWidth, length: boxHeight, chamferRadius: 0.0)
-        
+
         let material = SCNMaterial()
-        material.diffuse.contents = UIColor.yellow
-        material.fillMode = .lines  // Wireframe
+        material.diffuse.contents = UIColor.green.withAlphaComponent(0.8)
+        material.fillMode = .fill  // Solid
         material.lightingModel = .constant
+        material.isDoubleSided = true
         box.firstMaterial = material
-        
+
         pilotNode?.removeFromParentNode()
         pilotNode = SCNNode(geometry: box)
-        
-        // Position near the nose (30 units aft of start)
-        let noseX = CGFloat(profile.frontStart.x) + 30.0
-        
-        // Get floor height at this specific X to ensuring it sits inside
-        let (_, bottomZ) = getProfileHeight(at: Double(noseX), profile: profile)
-        let zPos = CGFloat(bottomZ) + boxHeight / 2.0 + 1.0 // +1.0 buffer from floor
-        
+
+        // Calculate payload position (middle of aircraft)
+        let midX = (CGFloat(profile.frontStart.x) + CGFloat(profile.exhaustEnd.x)) / 2.0
+        let payloadStartX = midX - payloadLength / 2.0
+
+        // Position pilot box so right edge aligns with left edge of payload
+        let pilotCenterX = payloadStartX - boxLength / 2.0
+
+        // The centerline in side profile is at inletStart.y, which becomes Z in 3D
+        let centerlineZ = CGFloat(profile.frontStart.y)
+
         pilotNode!.position = SCNVector3(
-            Float(noseX) - centerOffset.x,
-            0 - centerOffset.y,
-            Float(zPos) - centerOffset.z
+            Float(pilotCenterX) - centerOffset.x,     // X: in front of payload
+            0 - centerOffset.y,                        // Y: centered spanwise (width)
+            Float(centerlineZ) - centerOffset.z        // Z: centered on aircraft centerline
         )
-        
+
         wireframeNode?.addChildNode(pilotNode!)
     }
 

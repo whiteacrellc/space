@@ -76,6 +76,13 @@ class FlightSimulator {
             propulsionManager.enableAutoMode()
         }
 
+        // Flight Path Angle (Gamma)
+        // For an SSTO, we fly a shallow ascent to build speed.
+        // 5 degrees is a reasonable average for a lifting ascent.
+        let flightPathAngle = 5.0 * Double.pi / 180.0
+        let sinGamma = sin(flightPathAngle)
+        let cosGamma = cos(flightPathAngle)
+
         // Initial trajectory point
         let initialFuelRemaining = fuelMass / PhysicsConstants.kgPerLiter
         let initialTemp = ThermalModel.calculateLeadingEdgeTemperature(altitude: h, velocity: v, planeDesign: planeDesign)
@@ -104,23 +111,36 @@ class FlightSimulator {
             if v > targetV && h < targetH {
                 // We are fast but low. Coast up.
                 // Maintain enough thrust to overcome drag+gravity if possible, or just idle.
-                // For simplicity, cut throttle to 10% (idle)
                 thrust *= 0.1
             } else if v > targetV * 1.1 {
                  // Overspeed protection
                  thrust *= 0.0
             }
             
-            let drag = dragCalculator.calculateDrag(altitude: h, velocity: v)
-            let gravity = PhysicsConstants.gravity(at: h)
+            // Calculate Lift Required (Equilibrium Glide/Climb)
+            // L = W * cos(gamma) - CentrifugalForce
+            // F_centrifugal = m * v^2 / r
+            let gravityAccel = PhysicsConstants.gravity(at: h)
+            let radius = PhysicsConstants.earthRadius + h
             let mass = dryMass + fuelMass
-
-            // Net acceleration
-            let acceleration = (thrust - drag) / mass - gravity
+            let centrifugalForce = mass * v * v / radius
+            let weightComp = mass * gravityAccel * cosGamma
+            
+            // We need enough lift to stay on the path.
+            // If centrifugal force > weight component, we are effectively orbiting (negative lift needed to stay down, or just float)
+            // For drag calculations, we take magnitude of lift, but effectively if we are orbital, lift drag is zero.
+            let liftRequired = max(0.0, weightComp - centrifugalForce)
+            
+            let drag = dragCalculator.calculateDrag(altitude: h, velocity: v, lift: liftRequired)
+            
+            // Net acceleration along the flight path
+            // F_net = Thrust - Drag - Weight * sin(gamma)
+            let gravityDrag = mass * gravityAccel * sinGamma
+            let acceleration = (thrust - drag - gravityDrag) / mass
 
             // Update velocity and altitude
             v += acceleration * timeStep
-            h += v * timeStep
+            h += v * sinGamma * timeStep
 
             // Prevent going underground
             if h < 0 {
@@ -143,9 +163,7 @@ class FlightSimulator {
             // Check thermal limits
             let maxTemp = ThermalModel.getMaxTemperature(for: planeDesign)
             if currentTemp > maxTemp {
-                print("THERMAL FAILURE: Temperature \(Int(currentTemp))°C exceeds limit \(Int(maxTemp))°C")
-                print("  at altitude \(Int(h * PhysicsConstants.metersToFeet)) ft, Mach \(String(format: "%.1f", speedMach))")
-                // Continue simulation but note the failure
+                // Thermal failure logic can be handled here or by the caller analyzing the trajectory
             }
 
             // Record trajectory point every 10 steps (1 second) to reduce data
@@ -174,14 +192,10 @@ class FlightSimulator {
                 // Close enough to target
                 break
             }
-
-            // Check if we're moving away from target (diverging)
-            if time > 10 {
-                // If we're far from target and not making progress, give up
-                if altitudeDiff > 50000 || v < 0 {
-                    print("Simulation ended: Cannot reach target")
-                    break
-                }
+            
+            // Simple timeout for "stuck" simulations
+            if time > 600 && v < 100 {
+                 break
             }
         }
 

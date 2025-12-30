@@ -83,10 +83,9 @@ class DragCalculator {
 
      - Parameters:
        - Ma: The Mach number (velocity / speed of sound).
-       - altitude_m: Altitude in meters
-     - Returns: The estimated Drag Coefficient (unitless).
+     - Returns: The estimated Parasitic/Wave Drag Coefficient (unitless).
      */
-    private func getDragCoefficient(Ma: Double, altitude_m: Double) -> Double {
+    private func getDragCoefficient(Ma: Double) -> Double {
         var cd = baselineDragCoefficient
 
         if Ma < 0.8 {
@@ -116,39 +115,73 @@ class DragCalculator {
             cd = baselineDragCoefficient * (2.5 + 3.5 * decay)
         }
 
-        // Altitude effects: rarefied flow at extreme altitudes
-        cd *= getAltitudeFactor(altitude_m: altitude_m)
-
-        // Apply plane design drag multiplier
+        // Apply plane design drag multiplier (shape factor)
         cd *= planeDesign.dragMultiplier()
 
         return cd
     }
 
     /**
-     Calculate altitude correction factor for drag coefficient.
-     At extreme altitudes, rarefied flow changes drag characteristics.
-
-     - Parameter altitude_m: Altitude in meters
-     - Returns: Correction factor (0.0 to 1.0+)
+     Calculate induced drag coefficient based on lift.
+     C_di = k * C_L² = C_L² / (π * AR * e)
+     
+     - Parameters:
+       - lift: Lift force in Newtons
+       - dynamicPressure: q = 0.5 * rho * v²
+     - Returns: Induced Drag Coefficient
      */
-    private func getAltitudeFactor(altitude_m: Double) -> Double {
-        if altitude_m < 15000 {
-            // Dense atmosphere: normal drag
-            return 1.0
-        } else if altitude_m < 30000 {
-            // Upper atmosphere: slight decrease
-            let transitionFactor = (altitude_m - 15000) / 15000
-            return 1.0 - transitionFactor * 0.05
-        } else if altitude_m < 60000 {
-            // Very high altitude: rarefied flow begins
-            let rarefiedFactor = (altitude_m - 30000) / 30000
-            return 0.95 - rarefiedFactor * 0.2
-        } else {
-            // Near-vacuum: minimal drag
-            return 0.75 * exp(-(altitude_m - 60000) / 30000)
-        }
+    private func getInducedDragCoefficient(lift: Double, dynamicPressure: Double) -> Double {
+        guard dynamicPressure > 0 else { return 0.0 }
+        
+        let cl = lift / (dynamicPressure * projectedArea)
+        
+        // Estimate Aspect Ratio (AR) from planform
+        // AR = b² / S. Here we approximate based on planeDesign width/length
+        // For a lifting body, AR is low (0.5 - 1.5)
+        let aspectRatio = 1.0 // Simplified
+        let efficiency = 0.8 // Oswald efficiency factor
+        
+        let k = 1.0 / (Double.pi * aspectRatio * efficiency)
+        return k * cl * cl
     }
+
+    /**
+     Calculate total drag force acting on the aircraft, including induced drag.
+     
+     - Parameters:
+       - altitude: Altitude in meters
+       - velocity: Velocity in meters per second
+       - lift: Lift force required (Newtons). If omitted, assumes zero-lift drag.
+     - Returns: Drag force in Newtons
+     */
+    func calculateDrag(altitude: Double, velocity: Double, lift: Double = 0.0) -> Double {
+        guard altitude >= 0, velocity >= 0 else {
+            return 0.0
+        }
+
+        // Get atmospheric data from AtmosphereModel
+        let density = AtmosphereModel.atmosphericDensity(at: altitude)
+        let speedOfSound = AtmosphereModel.speedOfSound(at: altitude)
+
+        // Calculate Mach number
+        let mach = velocity / speedOfSound
+        let dynamicPressure = 0.5 * density * velocity * velocity
+
+        // 1. Parasitic + Wave Drag (Zero-Lift)
+        let cd0 = getDragCoefficient(Ma: mach)
+        
+        // 2. Induced Drag (Lift-Dependent)
+        let cdi = getInducedDragCoefficient(lift: lift, dynamicPressure: dynamicPressure)
+        
+        // Total Cd
+        let totalCd = cd0 + cdi
+
+        // Calculate drag force: F_drag = q * C_d * A
+        let dragForce = dynamicPressure * totalCd * projectedArea
+
+        return dragForce
+    }
+
     
     /**
      Get diagnostic information about current flight regime.

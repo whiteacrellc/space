@@ -122,8 +122,7 @@ class ThermalModel {
 
         let finalTempK = min(t_wall_K, t_adiabatic_K)
 
-        // Convert to Celsius
-        return finalTempK - 273.15
+        return t_wall - 273.15
     }
 
     /// Calculate cooling power provided by fuel flow

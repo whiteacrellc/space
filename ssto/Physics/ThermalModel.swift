@@ -35,14 +35,17 @@ class ThermalModel {
     ///   - planeDesign: Aircraft design parameters (affects heating rate)
     /// - Returns: Leading edge temperature in Celsius
     static func calculateLeadingEdgeTemperature(altitude: Double, velocity: Double, planeDesign: PlaneDesign = PlaneDesign.defaultDesign) -> Double {
-        // Get atmospheric temperature at altitude
-        let ambientTemp = getAtmosphericTemperature(altitude: altitude)
+        // Get atmospheric temperature at altitude from the shared model
+        let ambientTemp = AtmosphereModel.temperature(at: altitude)
 
         // Calculate Mach number
-        let speedOfSound = calculateSpeedOfSound(temperatureK: ambientTemp)
+        let speedOfSound = AtmosphereModel.speedOfSound(at: altitude)
         let mach = velocity / speedOfSound
+        
+        // Avoid singularities at zero speed
+        if velocity < 1.0 { return ambientTemp - 273.15 }
 
-        // Recovery temperature formula
+        // Recovery temperature formula (Adiabatic Wall Temperature)
         // T_recovery = T_ambient * (1 + r * (γ-1)/2 * M^2)
         // where r is recovery factor (≈ 0.9 for turbulent boundary layer)
         let recoveryFactor = 0.9
@@ -52,25 +55,61 @@ class ThermalModel {
         let adiabaticWallTempK = ambientTemp * temperatureRatio
 
         // Apply plane design heating rate multiplier (geometric concentration)
-        // Sharper leading edges heat up faster
+        // Sharper leading edges heat up faster, effectively increasing the convection coefficient's impact
+        // or the stagnation point temperature factor.
+        // For simplicity, we apply it as a modifier to the recovery factor delta.
         let heatingMultiplier = planeDesign.heatingRateMultiplier()
-        let aeroDeltaT = (adiabaticWallTempK - ambientTemp) * heatingMultiplier
+        let effectiveAdiabaticWallTempK = ambientTemp + (adiabaticWallTempK - ambientTemp) * heatingMultiplier
         
-        // Refined Model: Radiative Equilibrium Approximation
-        // Real T_wall is lower than T_adiabatic because the surface radiates heat away.
-        // Q_in = h * (T_aw - T_w)
-        // Q_out = sigma * epsilon * T_w^4
-        // Equilibrium when Q_in = Q_out.
-        // We approximate this by reducing the effective delta T at high temperatures.
+        // Stefan-Boltzmann Radiative Equilibrium:
+        // Q_aero = Q_rad
+        // h * (T_aw - T_w) = epsilon * sigma * T_w^4
+        //
+        // This requires an estimate of h (convective heat transfer coefficient).
+        // Approximation for stagnation point heat transfer (Sutton-Graves):
+        // q_dot = k * sqrt(rho / R_nose) * V^3
+        // h = q_dot / (T_aw - T_w)
+        //
+        // Simplifying for this simulation:
+        // We iterate to find T_w where Q_in == Q_out
         
-        // Empirical cooling factor: Radiation becomes dominant as T^4
-        // This curve approximates the equilibrium solution without solving the quartic
-        let radiativeCoolingFactor = 1.0 / (1.0 + pow(adiabaticWallTempK / 3000.0, 4.0))
+        let density = AtmosphereModel.atmosphericDensity(at: altitude)
+        // Approximate nose radius (m) - sharper is smaller
+        let noseRadius = 0.1 / heatingMultiplier 
+        // Sutton-Graves constant (approx for earth atmosphere)
+        let k_sutton = 1.7415e-4 
         
-        let finalTempK = ambientTemp + aeroDeltaT * radiativeCoolingFactor
+        let q_aero_approx = k_sutton * sqrt(density / noseRadius) * pow(velocity, 3.0)
+        
+        // If q is small, T_w ~= T_aw
+        if q_aero_approx < 1.0 {
+             return effectiveAdiabaticWallTempK - 273.15
+        }
+        
+        // Iterative solution for T_wall
+        // epsilon * sigma * T_w^4 = q_aero_approx * (1 - T_w/T_aw) ?? 
+        // Actually, Sutton-Graves gives q directly assuming cold wall? 
+        // A better balance equation:
+        // h * (T_aw - T_w) = sigma * epsilon * T_w^4
+        // Estimate h from the q formula: h ~= q_sutton / (T_aw - T_ambient) roughly
+        
+        let sigma = 5.670374419e-8
+        let epsilon = 0.8 // Emissivity of thermal protection system
+        
+        // Initial guess
+        var t_wall = effectiveAdiabaticWallTempK
+        let h_est = q_aero_approx / max(1.0, (effectiveAdiabaticWallTempK - ambientTemp))
+        
+        // Newton-Raphson
+        for _ in 0..<5 {
+            let f = h_est * (effectiveAdiabaticWallTempK - t_wall) - sigma * epsilon * pow(t_wall, 4.0)
+            let df = -h_est - 4.0 * sigma * epsilon * pow(t_wall, 3.0)
+            let dt = f / df
+            t_wall = t_wall - dt
+            if abs(dt) < 0.1 { break }
+        }
 
-        // Convert to Celsius
-        return finalTempK - 273.15
+        return t_wall - 273.15
     }
 
     /// Get thermal limit for a specific material type
@@ -84,29 +123,8 @@ class ThermalModel {
         }
     }
 
-    /// Get atmospheric temperature at altitude in Kelvin
-    private static func getAtmosphericTemperature(altitude: Double) -> Double {
-        let temperatureK: Double
+    // Private helpers removed in favor of AtmosphereModel
 
-        if altitude < 11000 {
-            // Troposphere: linear temperature decrease
-            temperatureK = 288.15 - 0.0065 * altitude
-        } else if altitude < 20000 {
-            // Lower stratosphere: constant temperature
-            temperatureK = 216.65
-        } else {
-            // Upper stratosphere: temperature increases slightly
-            temperatureK = 216.65 + 0.001 * (altitude - 20000)
-        }
-
-        return max(180.0, temperatureK) // Minimum realistic temperature
-    }
-
-    /// Calculate speed of sound at given temperature
-    private static func calculateSpeedOfSound(temperatureK: Double) -> Double {
-        // a = sqrt(γ * R * T)
-        return sqrt(1.4 * 287.0 * temperatureK)
-    }
 
     /// Check if current flight conditions exceed thermal limits
     ///

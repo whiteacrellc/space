@@ -17,6 +17,7 @@ class JetEngine: PropulsionSystem {
     let name = "Jet"
     let machRange = 0.0...3.2  // J58 engine operates up to Mach 3.2
     let altitudeRange = 0.0...85000.0 // feet
+    let maxOperatingTemperature = 450.0 // °C (Compressor inlet limit)
     
     // Number of J58 engines (calculated based on aircraft needs)
     private var engineCount: Int = 2
@@ -223,6 +224,7 @@ class RamjetEngine: PropulsionSystem {
     let name = "Ramjet"
     let machRange = 2.5...5.5 // Adjusted for more accurate operational range
     let altitudeRange = 30000.0...90000.0 // feet, refined
+    let maxOperatingTemperature = 2200.0 // °C (Combustor material limit)
     
     // Air mass flow rate (kg/s) - typical for this class of ramjet
     private let airMassFlowRate = 50.0
@@ -232,55 +234,69 @@ class RamjetEngine: PropulsionSystem {
     
     func getThrust(altitude: Double, speed: Double) -> Double {
         let mach = speed
-        
+
         // Convert altitude from feet to meters
         let altitudeMeters = altitude * PhysicsConstants.feetToMeters
-        
+
         // Calculate specific thrust using physics model
         let specificThrust = model.calculateSpecificThrust(
             altitude: altitudeMeters,
             machNumber: mach
         )
-        
+
         // Convert to actual thrust using mass flow rate
         let thrust = specificThrust * airMassFlowRate
-        
+
         // Ram factor with smoother transition
         let ramFactor = 1.0 / (1.0 + exp(-(mach - 3.0) / 0.5)) // Sigmoid ramp
-        
-        return thrust * ramFactor
+
+        // Thrust falloff after Mach 5 (ramjet efficiency decreases at hypersonic speeds)
+        var efficiencyFactor = 1.0
+        if mach > 5.0 {
+            // Linear decay: thrust drops by 15% per Mach number above 5
+            efficiencyFactor = max(0.1, 1.0 - (mach - 5.0) * 0.15)
+        }
+
+        return thrust * ramFactor * efficiencyFactor
     }
     
     func getFuelConsumption(altitude: Double, speed: Double) -> Double {
         let mach = speed
-        
+
         // Convert altitude from feet to meters
         let altitudeMeters = altitude * PhysicsConstants.feetToMeters
-        
+
         // Calculate specific thrust to determine operation
         let specificThrust = model.calculateSpecificThrust(
             altitude: altitudeMeters,
             machNumber: mach
         )
-        
+
         // If no thrust, no fuel consumption
         guard specificThrust > 0 else {
             return 0.0
         }
-        
+
         // Accurate f from model
         let Ta = model.getISAProperties(altitude: altitudeMeters).Ta
         let T02_ideal = Ta * (1 + (RamjetConstants.GAMMA - 1) / 2.0 * pow(mach, 2.0))
         let T02 = Ta + RamjetConstants.ETA_INLET * (T02_ideal - Ta)
         let T03 = min(RamjetConstants.T_0_MAX, T02 + 1200.0)
         let f = RamjetConstants.CP_AIR * (T03 - T02) / (RamjetConstants.ETA_BURNER * RamjetConstants.H_C)
-        
+
         let fuelMassFlow = airMassFlowRate * f // kg/s
-        
+
+        // Increased fuel consumption after Mach 5 (inefficiency at hypersonic speeds)
+        var fuelPenalty = 1.0
+        if mach > 5.0 {
+            // Fuel consumption increases by 20% per Mach number above 5
+            fuelPenalty = 1.0 + (mach - 5.0) * 0.20
+        }
+
         // Convert to liters/second
         let fuelVolumeLPS = fuelMassFlow / AircraftVolumeModel.slushHydrogenDensity * 1000.0
-        
-        return fuelVolumeLPS
+
+        return fuelVolumeLPS * fuelPenalty
     }
 }
 
@@ -476,6 +492,7 @@ class ScramjetEngine: PropulsionSystem {
     let name = "Scramjet"
     let machRange = 5.0...12.0 // Adjusted for more realistic operational range
     let altitudeRange = 70000.0...150000.0 // feet, tightened for accuracy
+    let maxOperatingTemperature = 3000.0 // °C (Active cooling limit)
     
     // Air mass flow rate (kg/s) - typical for scramjet
     private let airMassFlowRate = 40.0
@@ -542,6 +559,7 @@ class RocketEngine: PropulsionSystem {
     let name = "Rocket"
     let machRange = 0.0...30.0 // Can operate at any speed
     let altitudeRange = 0.0...400000.0 // To orbit and beyond
+    let maxOperatingTemperature = 5000.0 // °C (Not air-breathing limited)
     
     // Rocket propellant characteristics
     // Uses liquid oxygen (LOX) as oxidizer with kerosene-type fuel (RP-1)

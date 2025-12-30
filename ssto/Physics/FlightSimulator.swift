@@ -21,17 +21,27 @@ class FlightSimulator {
     private let maxSimulationTime: Double
 
     init(
-        initialFuel: Double = 50000.0, // liters
         dryMass: Double = PhysicsConstants.dryMass,
         dragCoefficient: Double = PhysicsConstants.dragCoefficient,
-        referenceArea: Double = PhysicsConstants.referenceArea,
         planeDesign: PlaneDesign = PlaneDesign.defaultDesign,
         timeStep: Double = 0.1,
         maxSimulationTime: Double = 1000.0
     ) {
         self.altitude = 0
         self.velocity = 0
-        self.fuelMass = initialFuel * PhysicsConstants.kgPerLiter
+        
+        // Calculate fuel mass based on internal volume from wireframe geometry
+        let internalVolumeM3 = AircraftVolumeModel.calculateInternalVolume()
+        // Convert m³ to Liters (1 m³ = 1000 L) then to kg
+        // Assuming tanks are 100% full for the mission
+        let fuelVolumeLiters = internalVolumeM3 * 1000.0
+        self.fuelMass = fuelVolumeLiters * PhysicsConstants.kgPerLiter
+        
+        print("FlightSimulator initialized:")
+        print("  - Internal Volume: \(String(format: "%.1f", internalVolumeM3)) m³")
+        print("  - Fuel Capacity: \(String(format: "%.0f", fuelVolumeLiters)) L")
+        print("  - Fuel Mass: \(String(format: "%.0f", self.fuelMass)) kg")
+        
         self.dryMass = dryMass
         self.planeDesign = planeDesign
         self.dragCalculator = DragCalculator(

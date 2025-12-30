@@ -33,7 +33,50 @@ class DragCalculator {
     // MARK: - Drag Calculation
     
     /**
-     Estimates the Drag Coefficient (Cd) of a streamlined aircraft based on Mach number.
+     Calculate drag force acting on the aircraft.
+
+     Uses accurate Mach-dependent drag coefficients and atmospheric models.
+
+     - Parameters:
+       - altitude: Altitude in meters
+       - velocity: Velocity in meters per second
+     - Returns: Drag force in Newtons
+     */
+    func calculateDrag(altitude: Double, velocity: Double) -> Double {
+        guard altitude >= 0, velocity >= 0 else {
+            return 0.0
+        }
+
+        // Get atmospheric data from AtmosphereModel
+        let density = AtmosphereModel.atmosphericDensity(at: altitude)
+        let speedOfSound = AtmosphereModel.speedOfSound(at: altitude)
+
+        // Calculate Mach number
+        let mach = velocity / speedOfSound
+
+        // Get drag coefficient for current conditions
+        let cd = getDragCoefficient(Ma: mach, altitude_m: altitude)
+
+        // Calculate drag force: F_drag = 0.5 * ρ * v² * C_d * A
+        let dragForce = 0.5 * density * velocity * velocity * cd * projectedArea
+
+        return dragForce
+    }
+
+    /**
+     Get the drag coefficient at specified Mach number and altitude.
+
+     - Parameters:
+       - mach: Mach number
+       - altitude: Altitude in meters
+     - Returns: Drag coefficient (Cd)
+     */
+    func getCd(mach: Double, altitude: Double) -> Double {
+        return getDragCoefficient(Ma: mach, altitude_m: altitude)
+    }
+
+    /**
+     Estimates the Drag Coefficient (Cd) of a streamlined aircraft based on Mach number and altitude.
 
      Aircraft drag varies significantly across flight regimes, with transonic drag rise
      being particularly important for reaching orbit.

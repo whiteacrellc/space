@@ -23,12 +23,33 @@ struct PhysicsConstants {
     static let kgPerLiter = 0.08 // Fuel density: 80 kg/m³ = 0.08 kg/L
 
     // Aircraft properties (calculated based on fuel volume and design)
-    static let dryMass = 15000.0 // kg (baseline empty aircraft mass)
+    static let dryMass = 15000.0 // kg (baseline - used only as fallback)
     static let dragCoefficient = 0.02
     static let referenceArea = 50.0 // m² cross-sectional area (baseline)
 
+    /// Calculate actual dry mass based on aircraft design and flight plan
+    /// - Parameters:
+    ///   - volumeM3: Internal volume in cubic meters
+    ///   - waypoints: Flight plan waypoints
+    ///   - planeDesign: Aircraft design parameters
+    ///   - maxTemperature: Maximum expected temperature in Celsius (default 800°C)
+    /// - Returns: Calculated dry mass in kg
+    static func calculateDryMass(
+        volumeM3: Double,
+        waypoints: [Waypoint],
+        planeDesign: PlaneDesign,
+        maxTemperature: Double = 800.0
+    ) -> Double {
+        return EngineWeightModel.calculateDryMass(
+            volumeM3: volumeM3,
+            maxTemperature: maxTemperature,
+            waypoints: waypoints,
+            planeDesign: planeDesign
+        )
+    }
+
     // Flight parameters
-    static let orbitAltitude = 300000.0 // feet
+    static let orbitAltitude = 200000.0 // meters (Low Earth Orbit)
     static let orbitSpeed = 24.0 // Mach number
     static let speedOfSoundSeaLevel = 340.29 // m/s at 15°C
 
@@ -46,5 +67,23 @@ struct PhysicsConstants {
     /// Atmospheric density at altitude (meters)
     static func atmosphericDensity(at altitudeMeters: Double) -> Double {
         return AtmosphereModel.atmosphericDensity(at: altitudeMeters)
+    }
+
+    /// Calculate adjusted dry mass based on maximum temperature experienced
+    /// Weight increases by 0.3% for every 100°C over 600°C
+    /// - Parameter maxTemperature: Maximum temperature in Celsius
+    /// - Returns: Adjusted dry mass in kg
+    static func adjustedDryMass(maxTemperature: Double) -> Double {
+        let baseTemperature = 600.0 // °C
+        let weightIncreasePerDegree = 0.00003 // 0.3% per 100°C = 0.00003 per °C
+
+        if maxTemperature <= baseTemperature {
+            return dryMass
+        }
+
+        let temperatureExcess = maxTemperature - baseTemperature
+        let weightMultiplier = 1.0 + (weightIncreasePerDegree * temperatureExcess)
+
+        return dryMass * weightMultiplier
     }
 }

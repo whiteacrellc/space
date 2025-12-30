@@ -11,6 +11,7 @@ protocol PropulsionSystem {
     var name: String { get }
     var machRange: ClosedRange<Double> { get }
     var altitudeRange: ClosedRange<Double> { get }
+    var maxOperatingTemperature: Double { get }
 
     // Core physics calculations
     func getThrust(altitude: Double, speed: Double) -> Double // Returns Newtons

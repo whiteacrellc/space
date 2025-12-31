@@ -498,10 +498,9 @@ class SimulationScene: SKScene {
         }
 
         // Plot each waypoint at the segment boundary
-        for (index, waypoint) in waypoints.enumerated() {
+        for (index, _) in waypoints.enumerated() {
             // Use the cumulative time at this segment boundary
             let waypointTime = segmentEndTimes.count > index ? segmentEndTimes[index] : 0.0
-            let waypointAltMeters = waypoint.altitude * PhysicsConstants.feetToMeters
 
             // Find the trajectory point at this time
             var closestPoint: (time: Double, altitude: Double)? = nil

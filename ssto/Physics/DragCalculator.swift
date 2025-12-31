@@ -55,7 +55,7 @@ class DragCalculator {
         let mach = velocity / speedOfSound
 
         // Get drag coefficient for current conditions
-        let cd = getDragCoefficient(Ma: mach, altitude_m: altitude)
+        let cd = getDragCoefficient(Ma: mach)
 
         // Calculate drag force: F_drag = 0.5 * ρ * v² * C_d * A
         let dragForce = 0.5 * density * velocity * velocity * cd * projectedArea
@@ -72,7 +72,7 @@ class DragCalculator {
      - Returns: Drag coefficient (Cd)
      */
     func getCd(mach: Double, altitude: Double) -> Double {
-        return getDragCoefficient(Ma: mach, altitude_m: altitude)
+        return getDragCoefficient(Ma: mach)
     }
 
     /**

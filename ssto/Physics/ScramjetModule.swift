@@ -257,7 +257,7 @@ class ScramjetModule {
             // Longitudinal: Thrust - Drag - Weight*sin(gamma)
             // Normal: Lift - Weight*cos(gamma)
             let longitudinalForce = thrust - drag - weight * sin(flightPathAngle)
-            let normalForce = lift - weight * cos(flightPathAngle)
+            _ = lift - weight * cos(flightPathAngle)  // normalForce calculation (unused)
 
             // Accelerations
             let longitudinalAccel = longitudinalForce / mass

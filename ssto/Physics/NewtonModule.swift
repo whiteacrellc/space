@@ -139,7 +139,7 @@ class NewtonModule {
                                            planeDesign: PlaneDesign) -> Double {
 
         let deltaAltitude = abs(end.altitude - start.altitude) * PhysicsConstants.feetToMeters
-        let deltaSpeed = abs(end.speed - start.speed)
+        _ = abs(end.speed - start.speed)  // deltaSpeed (unused)
         let avgAltitude = (start.altitude + end.altitude) / 2.0
         let avgSpeed = (start.speed + end.speed) / 2.0
 
@@ -221,7 +221,7 @@ class NewtonModule {
             iteration += 1
 
             // Evaluate mission at current length
-            let (error, capacity, required, success) = evaluateMission(
+            let (error, capacity, required, _) = evaluateMission(
                 length: currentLength,
                 flightPlan: flightPlan,
                 planeDesign: planeDesign

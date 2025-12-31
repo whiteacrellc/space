@@ -164,7 +164,7 @@ struct RequiredVolumeModel {
         let deltaAltitude = abs(end.altitude - start.altitude) * PhysicsConstants.feetToMeters
         let deltaSpeed = abs(end.speed - start.speed)
         let avgAltitude = (start.altitude + end.altitude) / 2.0 * PhysicsConstants.feetToMeters
-        let avgSpeed = (start.speed + end.speed) / 2.0
+        _ = (start.speed + end.speed) / 2.0  // avgSpeed (unused)
 
         // Determine engine mode
         let engineMode = end.engineMode != .auto ? end.engineMode :

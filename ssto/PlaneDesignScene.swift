@@ -832,19 +832,17 @@ class PlaneDesignScene: SKScene {
         thermalFeedbackLabel?.fontColor = tempColor
 
         // Calculate aircraft configuration based on typical mission fuel requirements
-        let jetFuelKg = 40000.0      // Jet fuel for J58 engines (Mach 0-3.2)
         let hydrogenFuelKg = 10000.0 // Slush hydrogen for ramjet/scramjet (Mach 3-8)
         let methaneFuelKg = 5000.0   // Liquid methane for rocket (Mach 8+)
         let requiredThrust = 500000.0 // 500 kN required thrust
 
         let config = AircraftVolumeModel.generateAircraftConfiguration(
-            jetFuelKg: jetFuelKg,
             hydrogenFuelKg: hydrogenFuelKg,
             methaneFuelKg: methaneFuelKg,
             requiredThrust: requiredThrust
         )
 
-        aircraftSpecsLabel?.text = "\(config.engineCount)×J58, L=\(String(format: "%.0f", config.length))m, \(String(format: "%.0f", config.totalMass/1000))t"
+        aircraftSpecsLabel?.text = "\(config.engineCount)×ERJ, L=\(String(format: "%.0f", config.length))m, \(String(format: "%.0f", config.totalMass/1000))t"
     }
 
     private func getAtmosphericDensity(altitudeM: Double) -> Double {

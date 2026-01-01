@@ -7,27 +7,18 @@
 
 import Foundation
 
-/// Models aircraft volume, fuel capacity, and mass based on J58 engines and rocket propulsion
+/// Models aircraft volume, fuel capacity, and mass based on Ejector-Ramjet and Rocket propulsion
 class AircraftVolumeModel {
 
-    // MARK: - J58 Engine Specifications (from SR-71)
+    // MARK: - Ejector-Ramjet Engine Specifications
 
-    /// Fuel consumption per J58 engine (gallons per hour)
-    static let j58FuelConsumptionGPH = 8000.0
+    /// Thrust per Ejector-Ramjet engine (Newtons) - estimated for this class
+    static let ejectorRamjetThrustN = 200000.0 // 200 kN
 
-    /// Fuel consumption per J58 engine (liters per second)
-    static let j58FuelConsumptionLPS = 8000.0 * 3.78541 / 3600.0 // ~8.41 L/s
-
-    /// Thrust per J58 engine with afterburner (Newtons)
-    static let j58ThrustN = 150000.0 // 150 kN
-
-    /// J58 engine dry weight (kg)
-    static let j58WeightKg = 2400.0
+    /// Ejector-Ramjet engine dry weight (kg)
+    static let ejectorRamjetWeightKg = 3000.0
 
     // MARK: - Fuel Properties
-
-    /// Jet fuel density (kg/m³) - for J58 engines
-    static let jetFuelDensity = 80.0
 
     /// Slush hydrogen density (kg/m³) - for ramjet and scramjet
     static let slushHydrogenDensity = 86.0
@@ -71,15 +62,10 @@ class AircraftVolumeModel {
 
     // MARK: - Volume and Mass Calculations
 
-    /// Calculate number of J58 engines needed for required thrust
+    /// Calculate number of Ejector-Ramjet engines needed for required thrust
     static func calculateEngineCount(requiredThrust: Double) -> Int {
-        let enginesNeeded = ceil(requiredThrust / j58ThrustN)
+        let enginesNeeded = ceil(requiredThrust / ejectorRamjetThrustN)
         return max(1, Int(enginesNeeded))
-    }
-
-    /// Calculate jet fuel volume (m³) for J58 engines
-    static func calculateJetFuelVolume(fuelMassKg: Double) -> Double {
-        return fuelMassKg / jetFuelDensity
     }
 
     /// Calculate slush hydrogen volume (m³) for ramjet/scramjet
@@ -138,7 +124,7 @@ class AircraftVolumeModel {
         let tankMass = propellantMass * tankStructureFraction
 
         // Engine mass
-        let engineMass = Double(engineCount) * j58WeightKg
+        let engineMass = Double(engineCount) * ejectorRamjetWeightKg
 
         // Airframe (empirical: ~20% of total loaded mass)
         let airframeMass = (propellantMass + tankMass + engineMass) * 0.25
@@ -149,14 +135,13 @@ class AircraftVolumeModel {
     /// Calculate complete aircraft mass breakdown
     /// Note: No oxidizer mass needed - oxygen collected during flight
     static func calculateAircraftMass(
-        jetFuelKg: Double,
         hydrogenFuelKg: Double,
         methaneFuelKg: Double,
         engineCount: Int
     ) -> (dryMass: Double, propellantMass: Double, totalMass: Double) {
 
         // Only fuel mass - no oxidizer mass needed
-        let totalPropellant = jetFuelKg + hydrogenFuelKg + methaneFuelKg
+        let totalPropellant = hydrogenFuelKg + methaneFuelKg
 
         let structuralMass = calculateStructuralMass(
             propellantMass: totalPropellant,
@@ -168,32 +153,6 @@ class AircraftVolumeModel {
         return (structuralMass, totalPropellant, totalMass)
     }
 
-    /// Calculate fuel consumption rate for multiple J58 engines (L/s)
-    static func j58FuelConsumptionRate(engineCount: Int) -> Double {
-        return Double(engineCount) * j58FuelConsumptionLPS
-    }
-
-    /// Calculate total thrust from multiple J58 engines (N)
-    static func j58TotalThrust(engineCount: Int, altitude: Double, mach: Double) -> Double {
-        let baseThrust = Double(engineCount) * j58ThrustN
-
-        // Atmospheric density factor
-        let altitudeFeet = altitude
-        let densityFactor = exp(-altitudeFeet / 30000.0)
-
-        // Mach performance (J58 performs well up to Mach 3.2)
-        let machFactor: Double
-        if mach <= 3.2 {
-            // Optimal performance up to Mach 3.2
-            machFactor = 1.0
-        } else {
-            // Performance degrades above design limit
-            machFactor = max(0.1, 1.0 - (mach - 3.2) * 0.3)
-        }
-
-        return baseThrust * densityFactor * machFactor
-    }
-
     /// Calculate reference area based on aircraft dimensions (m²)
     static func calculateReferenceArea(wingspan: Double, height: Double) -> Double {
         // Frontal area approximation for lifting body
@@ -202,7 +161,6 @@ class AircraftVolumeModel {
 
     /// Generate complete aircraft configuration
     static func generateAircraftConfiguration(
-        jetFuelKg: Double,
         hydrogenFuelKg: Double,
         methaneFuelKg: Double,
         requiredThrust: Double
@@ -211,17 +169,15 @@ class AircraftVolumeModel {
         let engineCount = calculateEngineCount(requiredThrust: requiredThrust)
 
         // Calculate volumes
-        let jetFuelVolume = calculateJetFuelVolume(fuelMassKg: jetFuelKg)
         let hydrogenVolume = calculateHydrogenVolume(fuelMassKg: hydrogenFuelKg)
         let methaneVolume = calculateMethaneVolume(fuelMassKg: methaneFuelKg)
-        let totalPropellantVolume = jetFuelVolume + hydrogenVolume + methaneVolume
+        let totalPropellantVolume = hydrogenVolume + methaneVolume
 
         // Calculate dimensions
         let dimensions = calculateAircraftDimensions(totalPropellantVolume: totalPropellantVolume)
 
         // Calculate masses
         let masses = calculateAircraftMass(
-            jetFuelKg: jetFuelKg,
             hydrogenFuelKg: hydrogenFuelKg,
             methaneFuelKg: methaneFuelKg,
             engineCount: engineCount
@@ -238,7 +194,6 @@ class AircraftVolumeModel {
             length: dimensions.length,
             wingspan: dimensions.wingspan,
             height: dimensions.height,
-            jetFuelVolume: jetFuelVolume,
             hydrogenVolume: hydrogenVolume,
             methaneVolume: methaneVolume,
             dryMass: masses.dryMass,
@@ -260,7 +215,6 @@ struct AircraftConfiguration: Codable {
     let height: Double
 
     // Volumes (cubic meters)
-    let jetFuelVolume: Double      // For J58 engines (Mach 0-3.2)
     let hydrogenVolume: Double     // For ramjet/scramjet (Mach 3-8)
     let methaneVolume: Double      // For rocket (Mach 8+, vacuum)
 
@@ -273,11 +227,7 @@ struct AircraftConfiguration: Codable {
     let referenceArea: Double
 
     var totalVolume: Double {
-        return jetFuelVolume + hydrogenVolume + methaneVolume
-    }
-
-    var jetFuelMassKg: Double {
-        return jetFuelVolume * AircraftVolumeModel.jetFuelDensity
+        return hydrogenVolume + methaneVolume
     }
 
     var hydrogenMassKg: Double {
@@ -289,16 +239,15 @@ struct AircraftConfiguration: Codable {
     }
 
     var totalFuelMassKg: Double {
-        return jetFuelMassKg + hydrogenMassKg + methaneMassKg
+        return hydrogenMassKg + methaneMassKg
     }
 
     func summary() -> String {
         return """
         Aircraft Configuration:
-        - Engines: \(engineCount) × J58
+        - Engines: \(engineCount) × Ejector-Ramjet
         - Dimensions: L=\(String(format: "%.1f", length))m, W=\(String(format: "%.1f", wingspan))m, H=\(String(format: "%.1f", height))m
         - Dry Mass: \(String(format: "%.0f", dryMass))kg
-        - Jet Fuel: \(String(format: "%.0f", jetFuelMassKg))kg (\(String(format: "%.1f", jetFuelVolume))m³)
         - Slush H₂: \(String(format: "%.0f", hydrogenMassKg))kg (\(String(format: "%.1f", hydrogenVolume))m³)
         - LCH₄: \(String(format: "%.0f", methaneMassKg))kg (\(String(format: "%.1f", methaneVolume))m³)
         - Total Mass: \(String(format: "%.0f", totalMass))kg

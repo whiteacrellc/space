@@ -28,8 +28,8 @@ struct Waypoint: Codable, Equatable {
 
         // Check if engine mode is appropriate for speed
         switch engineMode {
-        case .jet:
-            return speed <= 3.2
+        case .ejectorRamjet:
+            return speed >= 3.0 && speed <= 10.0
         case .ramjet:
             return speed >= 2.5 && speed <= 6.5
         case .scramjet:

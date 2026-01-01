@@ -9,7 +9,7 @@ import Foundation
 
 enum EngineMode: String, Codable, CaseIterable {
     case auto = "Auto"
-    case jet = "Jet"
+    case ejectorRamjet = "Ejector-Ramjet"
     case ramjet = "Ramjet"
     case scramjet = "Scramjet"
     case rocket = "Rocket"
@@ -24,25 +24,40 @@ class PropulsionManager {
     init() {
         // Initialize all engines
         engines = [
-            .jet: JetEngine(),
+            .ejectorRamjet: EjectorRamjetEngine(),
             .ramjet: RamjetEngine(),
             .scramjet: ScramjetEngine(),
             .rocket: RocketEngine()
         ]
 
-        // Start with jet engine
-        currentEngine = engines[.jet]!
-        currentMode = .jet
+        // Start with Rocket engine (needed for takeoff/low speed)
+        currentEngine = engines[.rocket]!
+        currentMode = .rocket
     }
 
     /// Select the optimal engine based on efficiency at current conditions
     func selectOptimalEngine(altitude: Double, speed: Double) -> (engine: PropulsionSystem, mode: EngineMode) {
-        var bestEngine: PropulsionSystem = engines[.jet]!
-        var bestMode: EngineMode = .jet
+        var bestEngine: PropulsionSystem = engines[.rocket]!
+        var bestMode: EngineMode = .rocket
         var bestEfficiency: Double = 0.0
+
+        // If speed is low, rocket is likely the only choice
+        if speed < 2.0 {
+             return (engines[.rocket]!, .rocket)
+        }
 
         // Evaluate each engine type
         for (mode, engine) in engines {
+            // Skip rocket in efficiency check if we have air-breathing options available
+            // unless we are very high altitude
+            if mode == .rocket && altitude < 150000 && speed > 2.0 {
+                // Check if any air-breather works
+                let airBreathersWork = engines.values.contains { 
+                    $0.name != "Rocket" && $0.canOperate(at: altitude, speed: speed) 
+                }
+                if airBreathersWork { continue }
+            }
+            
             let efficiency = engine.getEfficiency(altitude: altitude, speed: speed)
 
             if efficiency > bestEfficiency {
@@ -50,6 +65,11 @@ class PropulsionManager {
                 bestEngine = engine
                 bestMode = mode
             }
+        }
+        
+        // Fallback to rocket if nothing else works
+        if bestEfficiency <= 0.0 {
+             return (engines[.rocket]!, .rocket)
         }
 
         return (bestEngine, bestMode)

@@ -694,7 +694,7 @@ class FlightPlanningScene: SKScene {
     }
 
     private func cycleEngine() {
-        let allModes: [EngineMode] = [.auto, .jet, .ramjet, .scramjet, .rocket]
+        let allModes: [EngineMode] = [.auto, .ejectorRamjet, .ramjet, .scramjet, .rocket]
         if let currentIndex = allModes.firstIndex(of: currentEngine) {
             let nextIndex = (currentIndex + 1) % allModes.count
             currentEngine = allModes[nextIndex]

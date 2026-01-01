@@ -14,7 +14,8 @@ class MenuScene: SKScene {
     private var titleLabel: SKLabelNode?
     private var newGameButton: SKLabelNode?
     private var planeDesignButton: SKLabelNode?
-    private var resumeGameButton: SKLabelNode?
+    private var settingsButton: SKLabelNode?
+    private var leaderboardButton: SKLabelNode?
     private var exitButton: SKLabelNode?
     private var jupiter: SKSpriteNode?
     
@@ -105,14 +106,20 @@ class MenuScene: SKScene {
             addChild(planeDesignButton)
         }
 
-        // Resume Game button
-        resumeGameButton = createButton(text: "Resume Game", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 2), height: buttonHeight)
-        if let resumeGameButton = resumeGameButton {
-            addChild(resumeGameButton)
+        // Settings button (replaces Resume Game)
+        settingsButton = createButton(text: "Settings", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 2), height: buttonHeight)
+        if let settingsButton = settingsButton {
+            addChild(settingsButton)
+        }
+
+        // Leaderboard button
+        leaderboardButton = createButton(text: "Leaderboard", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 3), height: buttonHeight)
+        if let leaderboardButton = leaderboardButton {
+            addChild(leaderboardButton)
         }
 
         // Exit button
-        exitButton = createButton(text: "Exit", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 3), height: buttonHeight)
+        exitButton = createButton(text: "Exit", position: CGPoint(x: size.width / 2, y: startY - buttonSpacing * 4), height: buttonHeight)
         if let exitButton = exitButton {
             addChild(exitButton)
         }
@@ -158,8 +165,10 @@ class MenuScene: SKScene {
                     startNewGame()
                 case "Plane Design":
                     openPlaneDesign()
-                case "Resume Game":
-                    resumeGame()
+                case "Settings":
+                    openSettings()
+                case "Leaderboard":
+                    showLeaderboard()
                 case "Exit":
                     exitGame()
                 default:
@@ -192,14 +201,21 @@ class MenuScene: SKScene {
         }
     }
 
-    private func resumeGame() {
-        // Resume existing flight plan (if any)
-        let transition = SKTransition.fade(withDuration: 1.0)
-        let planningScene = FlightPlanningScene(size: size)
-        planningScene.scaleMode = .aspectFill
-        view?.presentScene(planningScene, transition: transition)
+    private func openSettings() {
+        // Transition to Settings scene
+        let transition = SKTransition.fade(withDuration: 0.5)
+        let settingsScene = SettingsScene(size: size)
+        settingsScene.scaleMode = .aspectFill
+        view?.presentScene(settingsScene, transition: transition)
     }
-    
+
+    private func showLeaderboard() {
+        let transition = SKTransition.fade(withDuration: 0.5)
+        let leaderboardScene = LeaderboardScene(size: size)
+        leaderboardScene.scaleMode = .aspectFill
+        view?.presentScene(leaderboardScene, transition: transition)
+    }
+
     private func exitGame() {
         // Exit the application
         exit(0)

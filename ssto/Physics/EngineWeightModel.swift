@@ -212,13 +212,13 @@ struct EngineWeightModel {
         return baseWeight + thermalProtectionWeight
     }
 
-    /// Calculate total dry mass including structure and engines
+    /// Calculate total dry mass including structure, engines, and cargo
     /// - Parameters:
     ///   - volumeM3: Internal volume in cubic meters
     ///   - maxTemperature: Maximum expected temperature in Celsius
     ///   - waypoints: Flight plan waypoints
     ///   - planeDesign: Aircraft design parameters
-    /// - Returns: Total dry mass in kg
+    /// - Returns: Total dry mass in kg (structure + engines + cargo)
     static func calculateDryMass(
         volumeM3: Double,
         maxTemperature: Double,
@@ -229,9 +229,12 @@ struct EngineWeightModel {
         // Start with structural weight
         let structuralWeight = calculateStructuralWeight(volumeM3: volumeM3, maxTemperature: maxTemperature)
 
-        // Estimate total mass for thrust calculation (structure + 50% fuel load)
+        // Add fixed cargo weight
+        let cargoWeight = PhysicsConstants.cargoMass
+
+        // Estimate total mass for thrust calculation (structure + cargo + 50% fuel load)
         let fuelCapacity = volumeM3 * 1000.0 * 0.086 // kg
-        let estimatedMass = structuralWeight + (fuelCapacity * 0.5)
+        let estimatedMass = structuralWeight + cargoWeight + (fuelCapacity * 0.5)
 
         // Calculate engine weight
         let engineWeight = calculateTotalEngineWeight(
@@ -240,7 +243,7 @@ struct EngineWeightModel {
             planeDesign: planeDesign
         )
 
-        // Total dry mass
-        return structuralWeight + engineWeight
+        // Total dry mass = structure + engines + cargo
+        return structuralWeight + engineWeight + cargoWeight
     }
 }

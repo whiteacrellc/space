@@ -184,11 +184,11 @@ class SideProfileShapeView: UIView {
     }
 
     private func drawPayloadAndPilotBoxes(context: CGContext) {
-        // Dimensions in meters
-        let pilotLength: CGFloat = 6.0   // 6m long
+        // Dimensions in meters (3m × 3m × length)
+        let pilotLength: CGFloat = 5.0   // 5m long
         let pilotHeight: CGFloat = 3.0   // 3m high
         let payloadLength: CGFloat = 20.0 // 20m long
-        let payloadHeight: CGFloat = 5.0  // 5m high
+        let payloadHeight: CGFloat = 3.0  // 3m high
 
         // Scale: canvas width (800) represents approximately 70 meters
         let scale = canvasWidth / 70.0  // ~11.43 units per meter
@@ -260,8 +260,8 @@ class SideProfileShapeView: UIView {
         context.drawPath(using: .fillStroke)
 
         // Add labels
-        let pilotLabel = "Pilot\n3m high"
-        let payloadLabel = "Payload\n5m high"
+        let pilotLabel = "Pilot\n5m × 3m"
+        let payloadLabel = "Cargo\n20m × 3m"
 
         let labelFont = UIFont.systemFont(ofSize: 10, weight: .medium)
         let labelAttributes: [NSAttributedString.Key: Any] = [
@@ -284,7 +284,7 @@ class SideProfileShapeView: UIView {
         (payloadLabel as NSString).draw(at: payloadLabelPoint, withAttributes: labelAttributes)
 
         // Draw minimum length indicator in lower right
-        let minLength: CGFloat = 30.0  // 30m minimum (ensures pilot + payload boxes fit)
+        let minLength: CGFloat = 30.0  // 30m minimum (ensures pilot + cargo boxes fit: 5m + 20m = 25m)
         let minLengthText = String(format: "Min Length: %.0fm", minLength)
 
         let minLengthFont = UIFont.monospacedSystemFont(ofSize: 12, weight: .bold)

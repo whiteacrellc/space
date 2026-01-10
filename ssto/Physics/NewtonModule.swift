@@ -15,17 +15,18 @@ class NewtonModule {
     /// Maximum iterations for Newton-Raphson
     static let maxIterations: Int = 20
 
-    /// Convergence threshold (0.1% of dry weight)
-    static let convergenceThreshold: Double = 0.001
+    /// Convergence threshold (0.01% of dry weight)
+    static let convergenceThreshold: Double = 0.0001
 
     /// Finite difference step size for derivative estimation (meters)
-    static let derivativeStepSize: Double = 0.5
+    static let derivativeStepSize: Double = 1.0
 
     /// Minimum aircraft length (meters)
     static let minLength: Double = 30.0
 
     /// Maximum aircraft length (meters)
-    static let maxLength: Double = 150.0
+    /// Note: Volume scales as length³, so large lengths may be needed for heavy payloads
+    static let maxLength: Double = 1000.0
 
     // MARK: - Optimization Result
 
@@ -258,10 +259,22 @@ class NewtonModule {
             print()
 
             // Check if length changed significantly
-            if abs(clampedLength - currentLength) < 0.01 {
-                print("  ✓ Length converged (change < 0.01 m)")
-                converged = true
-                break
+            let stepSize = abs(clampedLength - currentLength)
+            if stepSize < 0.001 {
+                // If error is relatively small (5%), accept convergence
+                if abs(error) < dryWeight * 0.05 {
+                    print("  ✓ Length converged (change < 0.001 m, error < 5%)")
+                    converged = true
+                    break
+                }
+                
+                // If step is extremely small, we are stuck
+                if stepSize < 1e-6 {
+                    print("  ⚠️ Step size extremely small (\(stepSize)), stopping")
+                    break
+                }
+                
+                // Otherwise continue to try to reduce error
             }
 
             currentLength = clampedLength

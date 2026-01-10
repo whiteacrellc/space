@@ -156,8 +156,8 @@ class FuelEstimator {
         planeDesign: PlaneDesign
     ) -> Double {
         // Fixed volumes (from RequiredVolumeModel constants)
-        let payloadVolume = 500.0  // 20m × 5m × 5m
-        let pilotVolume = 108.0    // 6m × 6m × 3m
+        let payloadVolume = 180.0  // 3m × 3m × 20m
+        let pilotVolume = 45.0     // 3m × 3m × 5m
         let fixedVolume = payloadVolume + pilotVolume
 
         // Fuel densities

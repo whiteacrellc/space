@@ -116,7 +116,7 @@ class TakeoffModule {
             
             // Thermal Check (Safety)
             // Engines usually fine at sea level/low speed, but check protocol
-            if let engineMaxTemp = (propulsion as? PropulsionSystem)?.maxOperatingTemperature {
+            if propulsion.maxOperatingTemperature > 0 {
                  // Get ambient/stagnation temp from ThermalModel
                  // At low speed, T ~ T_ambient
                  // Just a placeholder check

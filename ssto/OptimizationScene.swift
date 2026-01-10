@@ -87,8 +87,25 @@ class OptimizationScene: SKScene {
     }
 
     private func displayIteration(iteration: Int, length: Double, error: Double, yPosition: CGFloat) {
-        let iterationText = String(format: "Iteration %d: Length = %.2f m, Error = %+.0f kg",
-                                   iteration + 1, length, error)
+        // Calculate dry weight for this iteration's length to show context
+        let planform = GameManager.shared.getTopViewPlanform()
+        let originalLength = planform.aircraftLength
+        let volumeScaleFactor = pow(length / originalLength, 3.0)
+        let baseVolume = AircraftVolumeModel.calculateInternalVolume()
+        let scaledVolume = baseVolume * volumeScaleFactor
+
+        let flightPlan = GameManager.shared.getFlightPlan()
+        let planeDesign = GameManager.shared.getPlaneDesign()
+
+        let dryWeight = PhysicsConstants.calculateDryMass(
+            volumeM3: scaledVolume,
+            waypoints: flightPlan.waypoints,
+            planeDesign: planeDesign,
+            maxTemperature: 800.0
+        )
+
+        let iterationText = String(format: "Iteration %d: Length = %.2f m, Dry Weight = %.0f kg, Error = %+.0f kg",
+                                   iteration + 1, length, dryWeight, error)
 
         let label = SKLabelNode(text: iterationText)
         label.fontName = "Menlo-Regular"
@@ -136,12 +153,18 @@ class OptimizationScene: SKScene {
         addChild(capacityLabel)
 
         // Dry weight (aircraft weight without fuel) - calculated dynamically
-        let volume = AircraftVolumeModel.calculateInternalVolume()
+        // Scale volume based on optimal length to match SimulationScene
+        let planform = GameManager.shared.getTopViewPlanform()
+        let originalLength = planform.aircraftLength
+        let volumeScaleFactor = pow(result.optimalLength / originalLength, 3.0)
+        let baseVolume = AircraftVolumeModel.calculateInternalVolume()
+        let scaledVolume = baseVolume * volumeScaleFactor
+
         let flightPlan = GameManager.shared.getFlightPlan()
         let planeDesign = GameManager.shared.getPlaneDesign()
 
         let dryWeight = PhysicsConstants.calculateDryMass(
-            volumeM3: volume,
+            volumeM3: scaledVolume,
             waypoints: flightPlan.waypoints,
             planeDesign: planeDesign,
             maxTemperature: 800.0 // Estimated max temp
@@ -165,16 +188,16 @@ class OptimizationScene: SKScene {
                 print("⚠️ Failed to auto-save optimized design")
             }
 
-            let volume = AircraftVolumeModel.calculateInternalVolume()
+            // Use scaled volume for leaderboard (same as used for dry weight calculation)
             let score = LeaderboardEntry(
                 name: "",
-                volume: volume,
+                volume: scaledVolume,
                 optimalLength: result.optimalLength,
                 fuelCapacity: result.fuelCapacity,
                 date: Date()
             )
 
-            if LeaderboardManager.shared.wouldMakeTopTen(volume: volume) {
+            if LeaderboardManager.shared.wouldMakeTopTen(volume: scaledVolume) {
                 // Show "New High Score!" message
                 let highScoreLabel = SKLabelNode(text: "🏆 NEW TOP 10 SCORE! 🏆")
                 highScoreLabel.fontName = "AvenirNext-Bold"
@@ -270,9 +293,12 @@ class OptimizationScene: SKScene {
     }
 
     private func showContinueButton(yPosition: CGFloat) {
+        // Position button on middle right of scene
+        let xPosition = size.width - 180
+        let yPosition = size.height / 2
         continueButton = createButton(
             text: "Continue to Simulation",
-            position: CGPoint(x: size.width / 2, y: yPosition),
+            position: CGPoint(x: xPosition, y: yPosition),
             name: "continue"
         )
         if let button = continueButton {

@@ -20,12 +20,15 @@ struct PhysicsConstants {
     // Conversion factors
     static let feetToMeters = 0.3048
     static let metersToFeet = 3.28084
-    static let kgPerLiter = 0.08 // Fuel density: 80 kg/m³ = 0.08 kg/L
+
+    // Fuel properties
+    static let slushHydrogenDensity = 86.0 // kg/m³ (slush hydrogen)
+    static let kgPerLiter = slushHydrogenDensity / 1000.0 // 0.086 kg/L
 
     // Aircraft properties (calculated based on fuel volume and design)
     static let dryMass = 15000.0 // kg (baseline - used only as fallback)
     static let dragCoefficient = 0.02
-    static let referenceArea = 50.0 // m² cross-sectional area (baseline)
+    static let referenceArea = 500.0 // m² cross-sectional area (baseline)
 
     /// Calculate actual dry mass based on aircraft design and flight plan
     /// - Parameters:
@@ -50,8 +53,37 @@ struct PhysicsConstants {
 
     // Flight parameters
     static let orbitAltitude = 200000.0 // meters (Low Earth Orbit)
+    static let orbitAltitudeFeet = orbitAltitude * metersToFeet // 656,168 feet
     static let orbitSpeed = 24.0 // Mach number
     static let speedOfSoundSeaLevel = 340.29 // m/s at 15°C
+
+    // Engine operating limits (altitude in meters, speed in Mach)
+    struct EngineLimits {
+        static let jet = (
+            minAltitude: 0.0,
+            maxAltitude: 25001.0,
+            minSpeed: 0.0,
+            maxSpeed: 3.2
+        )
+        static let ramjet = (
+            minAltitude: 12500.0,
+            maxAltitude: 40001.0,
+            minSpeed: 2.0,
+            maxSpeed: 8.0
+        )
+        static let scramjet = (
+            minAltitude: 25000.0,
+            maxAltitude: 75001.0,
+            minSpeed: 5.0,
+            maxSpeed: 16.0
+        )
+        static let rocket = (
+            minAltitude: 0.0,
+            maxAltitude: 500000.0,
+            minSpeed: 0.0,
+            maxSpeed: 30.0
+        )
+    }
 
     /// Standard gravity at sea level (m/s²)
     static func standardGravity() -> Double {
@@ -85,5 +117,15 @@ struct PhysicsConstants {
         let weightMultiplier = 1.0 + (weightIncreasePerDegree * temperatureExcess)
 
         return dryMass * weightMultiplier
+    }
+
+    /// Check if orbital parameters are achieved
+    /// - Parameters:
+    ///   - altitude: Altitude in feet
+    ///   - speed: Speed in Mach
+    /// - Returns: True if altitude and speed meet orbital requirements
+    static func isOrbitAchieved(altitude: Double, speed: Double) -> Bool {
+        let altitudeMeters = altitude * feetToMeters
+        return altitudeMeters >= orbitAltitude && speed >= orbitSpeed
     }
 }

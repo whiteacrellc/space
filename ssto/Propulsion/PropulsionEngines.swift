@@ -88,7 +88,8 @@ class EjectorRamjetEngine: PropulsionSystem {
     let name = "Ejector-Ramjet"
     let machRange = 3.0...10.0
     let altitudeRange = 50000.0...150000.0 // feet
-    
+    let maxOperatingTemperature = 1800.0 // °C
+
     private let airMassFlowRate = 60.0 // Higher mass flow
     private let model = EjectorRamjetModel()
     
@@ -199,7 +200,8 @@ class RamjetEngine: PropulsionSystem {
     let name = "Ramjet"
     let machRange = 2.0...8.0 // Updated
     let altitudeRange = 60000.0...120000.0 // Updated
-    
+    let maxOperatingTemperature = 2000.0 // °C
+
     private let airMassFlowRate = 50.0
     private let model = RamjetModel()
     
@@ -332,7 +334,8 @@ class ScramjetEngine: PropulsionSystem {
     let name = "Scramjet"
     let machRange = 5.0...15.0 // Updated
     let altitudeRange = 90000.0...200000.0 // Updated
-    
+    let maxOperatingTemperature = 2200.0 // °C
+
     private let airMassFlowRate = 40.0
     private let model = ScramjetModel()
     
@@ -370,7 +373,8 @@ class RocketEngine: PropulsionSystem {
     let name = "Rocket"
     let machRange = 0.0...30.0
     let altitudeRange = 0.0...400000.0
-    
+    let maxOperatingTemperature = 3000.0 // °C
+
     private let oxidizerToFuelRatio = 2.36
     private let seaLevelThrust = 845000.0
     private let seaLevelIsp = 300.0

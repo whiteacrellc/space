@@ -4,7 +4,7 @@ This file provides guidance to gemini when working with code in this repository.
 
 ## Project Overview
 
-This is an iOS SpriteKit/SceneKit game simulating a Single-Stage-To-Orbit (SSTO) aircraft. Players design a lifting-body aircraft, create a flight plan with waypoints, and simulate ascent to orbit while managing propulsion systems (jet, ramjet, scramjet, rocket) and thermal limits.
+This is an iOS SpriteKit/SceneKit game simulating a Single-Stage-To-Orbit (SSTO) aircraft. Players design a lifting-body aircraft, create a flight plan with waypoints, and simulate ascent to orbit while managing propulsion systems (ramjet/ejector ramjet, scramjet, rocket) and thermal limits.
 
 ## Build Commands
 

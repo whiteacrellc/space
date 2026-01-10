@@ -8,31 +8,38 @@ import SceneKit.ModelIO
 /// Represents a 2D airfoil cross-section
 struct AirfoilSection {
     let centerX: Float      // Longitudinal position along aircraft
-    let centerY: Float      // Vertical position
-    let centerZ: Float      // Lateral position
-    let chord: Float        // Chord length of this section
-    let thickness: Float    // Maximum thickness ratio (as fraction of chord)
-    let scale: Float        // Overall scaling factor
+    let centerY: Float      // Vertical position (centerline Z)
+    let centerZ: Float      // Lateral position (usually 0)
+    let chord: Float        // Width (Span) at this section
+    let thickness: Float    // Not used (legacy)
+    let scale: Float        // Height at centerline
 }
 
 /// Represents a point on an airfoil profile
 struct AirfoilPoint {
-    let x: Float  // Chordwise position (0 to 1)
-    let y: Float  // Vertical offset from chord line
+    let x: Float  // Normalized width (-1 to 1 or 0 to 1)
+    let y: Float  // Normalized height (-1 to 1 or 0 to 1)
 }
 
 class LiftingBodyEngine {
 
-    // MARK: - Aircraft Dimensions
-    static let aircraftLength: Float = 100.0  // meters minimum length
-    static let maxWidth: Float = 300.0        // meters at widest point
+    // MARK: - Geometry Generation Entry Point
 
-    // MARK: - Payload Box Constraints
-    static let payloadWidth: Float = 8.0    // meters
-    static let payloadHeight: Float = 8.0   // meters
-    static let payloadLength: Float = 16.0  // meters
+    /// Generates the lifting body geometry based on the current design in GameManager.
+    /// This integrates Top View (width), Side View (height/profile), and Cross-Section (shape) designs.
+    static func generateGeometry() -> SCNGeometry {
+        let topView = GameManager.shared.getTopViewPlanform()
+        let sideProfile = GameManager.shared.getSideProfile()
+        let crossSection = GameManager.shared.getCrossSectionPoints()
+        
+        return generateGeometryFromDesign(
+            planform: topView,
+            profile: sideProfile,
+            crossSectionPoints: crossSection
+        )
+    }
 
-    /// Generates the lifting body geometry based on the provided parameters.
+    /// Legacy entry point (kept for compatibility if needed, but redirects to new logic if possible)
     static func generateGeometry(
         coneAngle: Double,
         sweepAngle: Double,
@@ -41,433 +48,386 @@ class LiftingBodyEngine {
         heightFactor: Double = 10,
         slopeCurve: Double = 1.5
     ) -> SCNGeometry {
+        // Fallback to the new design system
+        return generateGeometry()
+    }
 
-        // Convert angles to radians
-        let alpha = Float(coneAngle) * (Float.pi / 180.0)
-        let sweepRad = Float(sweepAngle) * (Float.pi / 180.0)
-        let tiltRad = Float(tiltAngle) * (Float.pi / 180.0)
+    // MARK: - Core Generation Logic
 
-        print("Generating geometry: coneAngle=\(coneAngle)°, sweepAngle=\(sweepAngle)°, tiltAngle=\(tiltAngle)°")
+    static func generateGeometryFromDesign(
+        planform: TopViewPlanform,
+        profile: SideProfileShape,
+        crossSectionPoints: CrossSectionPoints
+    ) -> SCNGeometry {
+        
+        // 1. Generate Cross Sections along the length
+        let sections = generateCrossSectionsFromDesign(planform: planform, profile: profile)
+        
+        // 2. Generate Base Airfoil Shape (normalized)
+        let baseAirfoil = generateCrossSectionFromSpline(crossSectionPoints: crossSectionPoints)
+        
+        // 3. Generate 3D Mesh
+        return generateMeshFromSections(sections: sections, baseAirfoil: baseAirfoil)
+    }
 
-        // Define cross-sections along the length
-        let sections = generateCrossSections(
-            coneAngle: alpha,
-            sweepAngle: sweepRad,
-            tiltAngle: tiltRad
+    // MARK: - Cross-Section Analysis
+
+    /// Generates sections along the aircraft length by sampling the Top and Side designs
+    static func generateCrossSectionsFromDesign(
+        planform: TopViewPlanform,
+        profile: SideProfileShape
+    ) -> [AirfoilSection] {
+        
+        var sections: [AirfoilSection] = []
+        let numSections = 60
+        
+        // --- Coordinate System Setup ---
+        // Top View: noseTip.x to tailLeft.x corresponds to 0 to aircraftLength (meters)
+        let noseX = CGFloat(planform.noseTip.x)
+        let tailX = CGFloat(planform.tailLeft.x)
+        let canvasLength = tailX - noseX
+        let realLength = CGFloat(planform.aircraftLength)
+        let scaleToMeters = realLength / max(1.0, canvasLength)
+        
+        // Side View: Coordinates are in same canvas space (0-800 usually)
+        // We need to map X in Top View to X in Side View
+        let sideNoseX = CGFloat(profile.frontStart.x)
+        let sideTailX = CGFloat(profile.exhaustEnd.x)
+        let sideViewLength = sideTailX - sideNoseX
+        
+        for i in 0...numSections {
+            let t = CGFloat(i) / CGFloat(numSections)
+            
+            // Current X in "Real World" (Meters)
+            let currentRealX = t * realLength
+            
+            // Current X in Top View Canvas
+            let topViewX = noseX + (t * canvasLength)
+            
+            // 1. Calculate Width (Span) from Top View
+            let halfWidthCanvas = getTopViewWidthAt(x: topViewX, planform: planform)
+            let widthMeters = (halfWidthCanvas * scaleToMeters) * 2.0 // Total span
+            
+            // 2. Calculate Height and Vertical Position from Side View
+            // Map 't' to Side View X
+            let sideViewX = sideNoseX + (t * sideViewLength)
+            
+            let (topY, bottomY) = getSideProfileYAt(x: sideViewX, profile: profile)
+            
+            // Height in Canvas Units
+            let heightCanvas = abs(topY - bottomY)
+            let heightMeters = heightCanvas * scaleToMeters
+            
+            // Center Y (Vertical Position) in Canvas Units
+            // For 3D model, we typically center the fuselage vertically or align bottom
+            // Let's use the average Y relative to the Nose Y
+            let centerYCanvas = (topY + bottomY) / 2.0
+            let noseYCanvas = CGFloat(profile.frontStart.y)
+            let centerYMeters = (centerYCanvas - noseYCanvas) * scaleToMeters
+            
+            // Create Section
+            let section = AirfoilSection(
+                centerX: Float(currentRealX),
+                centerY: Float(centerYMeters), // Vertical offset
+                centerZ: 0,                    // Lateral offset (0 for symmetric)
+                chord: Float(widthMeters),     // Full Width
+                thickness: 1.0,                // Ratio, effectively ignored as we use Scale
+                scale: Float(heightMeters)     // Full Height
+            )
+            
+            sections.append(section)
+        }
+        
+        return sections
+    }
+    
+    // MARK: - Interpolation Helpers
+
+    /// Interpolates the Top View Planform to get half-width at a given X
+    static func getTopViewWidthAt(x: CGFloat, planform: TopViewPlanform) -> CGFloat {
+        // Extract points
+        let pNose = planform.noseTip.toCGPoint()
+        let pFrontCtrl = planform.frontControlLeft.toCGPoint()
+        let pMid = planform.midLeft.toCGPoint()
+        let pRearCtrl = planform.rearControlLeft.toCGPoint()
+        let pTail = planform.tailLeft.toCGPoint()
+        
+        // Determine segment
+        if x < pNose.x { return 0 } // Ahead of nose
+        
+        // Wing Logic: The planform drawing *includes* the wings if the tail point is wide
+        // But in TopViewShapeView, wings are drawn separately.
+        // Let's look at TopViewShapeView logic:
+        // getFuselageWidthAt only considers fuselage.
+        // If we want the mesh to include wings, we must add them here or generate separate wing geometry.
+        // For a "Lifting Body", the fuselage IS the wing.
+        // But TopViewShapeView draws "Fuselage" then "Wings".
+        // The Planform curve defines the FUSELAGE width.
+        // The Wing parameters define the WING width.
+        // We should merge them: Max(Fuselage, Wing) at X.
+        
+        // 1. Fuselage Width
+        var fuselageWidth: CGFloat = 0
+        if x <= pMid.x {
+            fuselageWidth = solveBezierY(x: x, p0: pNose, p1: pFrontCtrl, p2: pMid)
+        } else if x <= pTail.x {
+            fuselageWidth = solveBezierY(x: x, p0: pMid, p1: pRearCtrl, p2: pTail)
+        }
+        
+        // 2. Wing Width
+        // Wing Start: planform.wingStartPosition (0.0-1.0 of fuselage length)
+        // Wing Span: planform.wingSpan
+        let fuselageLen = pTail.x - pNose.x
+        let wingStartX = pNose.x + (fuselageLen * CGFloat(planform.wingStartPosition))
+        let wingEndX = pTail.x
+        
+        var wingWidth: CGFloat = 0
+        if x >= wingStartX && x <= wingEndX {
+            // Simple triangular wing
+            let t = (x - wingStartX) / (wingEndX - wingStartX)
+            let maxWingSpan = CGFloat(planform.wingSpan) // Extension beyond fuselage
+            // However, we need to know the fuselage width at the tail to know where the wing ends
+            // In TopViewShapeView: wingTrailingEdge = fuselageWidthAtEnd + wingSpan
+            // We assume linear growth from 0 at start to Max at end?
+            
+            // Wing Leading Edge is at wingStartX.
+            // Wing Trailing Edge is at wingEndX.
+            // Wing Tip is at (wingEndX, fuselageWidthAtEnd + wingSpan)
+            // Leading Edge of Wing: Line from (wingStartX, fuselageWidthAtStart) to (wingEndX, fuselageWidthAtEnd + wingSpan)
+            
+            // Let's verify TopViewShapeView:
+            // leftWingPath.move(to: wlLeading) // Leading Edge at Fuselage
+            // leftWingPath.addLine(to: wlTrailing) // Trailing Edge Tip
+            
+            // So width increases linearly from FuselageWidth(Start) to (FuselageWidth(End) + Span)
+            
+            let fuselageWidthAtStart = getFuselageWidthOnly(x: wingStartX, planform: planform)
+            let fuselageWidthAtEnd = getFuselageWidthOnly(x: wingEndX, planform: planform)
+            
+            let wingTipWidth = fuselageWidthAtEnd + maxWingSpan
+            
+            wingWidth = fuselageWidthAtStart + (wingTipWidth - fuselageWidthAtStart) * t
+        }
+        
+        return max(fuselageWidth, wingWidth)
+    }
+    
+    static func getFuselageWidthOnly(x: CGFloat, planform: TopViewPlanform) -> CGFloat {
+        let pNose = planform.noseTip.toCGPoint()
+        let pFrontCtrl = planform.frontControlLeft.toCGPoint()
+        let pMid = planform.midLeft.toCGPoint()
+        let pRearCtrl = planform.rearControlLeft.toCGPoint()
+        let pTail = planform.tailLeft.toCGPoint()
+        
+        if x < pNose.x { return 0 }
+        if x > pTail.x { return abs(pTail.y) } // Clamp to tail width
+        
+        if x <= pMid.x {
+            return solveBezierY(x: x, p0: pNose, p1: pFrontCtrl, p2: pMid)
+        } else {
+            return solveBezierY(x: x, p0: pMid, p1: pRearCtrl, p2: pTail)
+        }
+    }
+    
+    /// Interpolates the Side View Profile to get Top and Bottom Y values at a given X
+    static func getSideProfileYAt(x: CGFloat, profile: SideProfileShape) -> (top: CGFloat, bottom: CGFloat) {
+        // --- Top Curve ---
+        let topY = solveBezierY(
+            x: x,
+            p0: profile.topStart.toCGPoint(),
+            p1: profile.topControl.toCGPoint(),
+            p2: profile.topEnd.toCGPoint()
         )
-
-        // Generate mesh from cross-sections using NURBS-like interpolation
-        return generateMeshFromSections(sections: sections)
+        
+        // --- Bottom Curve ---
+        let inletEndX = CGFloat(profile.frontEnd.x)
+        let engineEndX = CGFloat(profile.engineEnd.x)
+        
+        var bottomY: CGFloat = 0
+        
+        if x <= inletEndX {
+            // Inlet Curve
+            bottomY = solveBezierY(
+                x: x,
+                p0: profile.frontStart.toCGPoint(),
+                p1: profile.frontControl.toCGPoint(),
+                p2: profile.frontEnd.toCGPoint()
+            )
+        } else if x <= engineEndX {
+            // Engine Section (Linear)
+            let t = (x - inletEndX) / max(1.0, (engineEndX - inletEndX))
+            let y1 = CGFloat(profile.frontEnd.y)
+            let y2 = CGFloat(profile.engineEnd.y)
+            bottomY = y1 + (y2 - y1) * t
+        } else {
+            // Nozzle Curve
+            bottomY = solveBezierY(
+                x: x,
+                p0: profile.engineEnd.toCGPoint(),
+                p1: profile.exhaustControl.toCGPoint(),
+                p2: profile.exhaustEnd.toCGPoint()
+            )
+        }
+        
+        return (topY, bottomY)
+    }
+    
+    /// Solves for Y on a quadratic Bezier curve given X
+    static func solveBezierY(x: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> CGFloat {
+        let x0 = p0.x
+        let x1 = p1.x
+        let x2 = p2.x
+        
+        if x <= x0 { return abs(p0.y) }
+        if x >= x2 { return abs(p2.y) }
+        
+        // x(t) = (1-t)^2*x0 + 2(1-t)t*x1 + t^2*x2
+        // At^2 + Bt + C = 0
+        let A = x0 - 2*x1 + x2
+        let B = 2*x1 - 2*x0
+        let C = x0 - x
+        
+        var t: CGFloat = 0.5
+        
+        if abs(A) < 0.001 {
+            if abs(B) > 0.001 { t = -C / B }
+        } else {
+            let delta = B*B - 4*A*C
+            if delta >= 0 {
+                let sqrtDelta = sqrt(delta)
+                let t1 = (-B + sqrtDelta) / (2*A)
+                let t2 = (-B - sqrtDelta) / (2*A)
+                if t1 >= 0 && t1 <= 1 { t = t1 }
+                else if t2 >= 0 && t2 <= 1 { t = t2 }
+            }
+        }
+        
+        t = max(0, min(1, t))
+        let y = pow(1-t, 2)*p0.y + 2*(1-t)*t*p1.y + t*t*p2.y
+        return abs(y)
     }
 
     // MARK: - Spline Cross-Section Generation
 
-    /// Generate cross-section profile from spline control points
-    /// Uses the spline shape defined in the LiftingBodyDesigner
+    /// Generate normalized cross-section shape from spline points
     static func generateCrossSectionFromSpline(
         crossSectionPoints: CrossSectionPoints,
-        numSamples: Int = 60
+        numSamples: Int = 30
     ) -> [AirfoilPoint] {
 
         var points: [AirfoilPoint] = []
-
-        // Canvas dimensions from SplineCalculator
-        let canvasHeight: CGFloat = 500.0
-        let centerY: CGFloat = 250.0  // Centerline from SplineCalculator
-
-        // Convert SerializablePoints to CGPoints
-        let topCGPoints = crossSectionPoints.topPoints.map { $0.toCGPoint() }
-        let bottomCGPoints = crossSectionPoints.bottomPoints.map { $0.toCGPoint() }
-
-        // Find X extent
-        let allX = topCGPoints.map { $0.x } + bottomCGPoints.map { $0.x }
-        let minX = allX.min() ?? 100.0
-        let maxX = allX.max() ?? 700.0
-        let xRange = maxX - minX
-
-        // Sample the top spline
-        var topSamples: [(x: Float, y: Float)] = []
+        let topCG = crossSectionPoints.topPoints.map { $0.toCGPoint() }
+        let bottomCG = crossSectionPoints.bottomPoints.map { $0.toCGPoint() }
+        
+        let minX = topCG.first?.x ?? 0
+        let maxX = topCG.last?.x ?? 800
+        let width = max(1.0, maxX - minX)
+        let centerY: CGFloat = 250
+        
+        // Find scale factor (max height of the drawn spline)
+        var maxSplineHeight: CGFloat = 1.0
+        for i in 0...20 {
+            let x = minX + (CGFloat(i)/20.0) * width
+            let ty = interpolateSplineY(x: x, points: topCG)
+            let by = interpolateSplineY(x: x, points: bottomCG)
+            maxSplineHeight = max(maxSplineHeight, abs(ty - by))
+        }
+        
+        // 2. Generate Top Surface
         for i in 0..<numSamples {
             let t = CGFloat(i) / CGFloat(numSamples - 1)
-            let x = minX + t * xRange
-
-            // Find closest point on top spline
-            let yValue = interpolateSpline(points: topCGPoints, atX: x)
-
-            // Normalize: x from 0 to 1, y centered around 0
-            let normalizedX = Float((x - minX) / xRange)
-            let normalizedY = Float((yValue - centerY) / canvasHeight) * 2.0  // Scale to reasonable range
-
-            topSamples.append((x: normalizedX, y: normalizedY))
+            let x = minX + t * width
+            let y = interpolateSplineY(x: x, points: topCG)
+            
+            let nx = Float((t - 0.5)) // -0.5 to 0.5
+            let ny = Float((y - centerY) / maxSplineHeight)
+            points.append(AirfoilPoint(x: nx, y: ny))
         }
-
-        // Sample the bottom spline
-        var bottomSamples: [(x: Float, y: Float)] = []
-        for i in 0..<numSamples {
+        
+        // 3. Generate Bottom Surface (Reversed)
+        for i in (0..<numSamples).reversed() {
             let t = CGFloat(i) / CGFloat(numSamples - 1)
-            let x = minX + t * xRange
-
-            // Find closest point on bottom spline
-            let yValue = interpolateSpline(points: bottomCGPoints, atX: x)
-
-            // Normalize: x from 0 to 1, y centered around 0
-            let normalizedX = Float((x - minX) / xRange)
-            let normalizedY = Float((yValue - centerY) / canvasHeight) * 2.0  // Scale to reasonable range
-
-            bottomSamples.append((x: normalizedX, y: normalizedY))
+            let x = minX + t * width
+            let y = interpolateSplineY(x: x, points: bottomCG)
+            
+            let nx = Float((t - 0.5))
+            let ny = Float((y - centerY) / maxSplineHeight)
+            points.append(AirfoilPoint(x: nx, y: ny))
         }
-
-        // Create closed contour: top surface (LE to TE) then bottom surface (TE to LE)
-        for sample in topSamples {
-            points.append(AirfoilPoint(x: sample.x, y: sample.y))
-        }
-
-        for sample in bottomSamples.reversed() {
-            points.append(AirfoilPoint(x: sample.x, y: sample.y))
-        }
-
+        
         return points
     }
-
-    /// Simple linear interpolation to find Y value at a given X on a spline
-    static func interpolateSpline(points: [CGPoint], atX targetX: CGFloat) -> CGFloat {
-        // Find the two points that bracket targetX
-        var closestBefore: CGPoint?
-        var closestAfter: CGPoint?
-
-        for point in points {
-            if point.x <= targetX {
-                if closestBefore == nil || point.x > closestBefore!.x {
-                    closestBefore = point
-                }
-            }
-            if point.x >= targetX {
-                if closestAfter == nil || point.x < closestAfter!.x {
-                    closestAfter = point
-                }
+    
+    static func interpolateSplineY(x: CGFloat, points: [CGPoint]) -> CGFloat {
+        if points.isEmpty { return 250 }
+        if points.count == 1 { return points[0].y }
+        
+        for i in 0..<(points.count - 1) {
+            let p0 = points[i]
+            let p1 = points[i+1]
+            if x >= p0.x && x <= p1.x {
+                let t = (x - p0.x) / (p1.x - p0.x)
+                return p0.y + t * (p1.y - p0.y)
             }
         }
-
-        // Linear interpolation
-        if let before = closestBefore, let after = closestAfter {
-            if abs(after.x - before.x) < 0.001 {
-                return before.y
-            }
-            let t = (targetX - before.x) / (after.x - before.x)
-            return before.y + t * (after.y - before.y)
-        } else if let before = closestBefore {
-            return before.y
-        } else if let after = closestAfter {
-            return after.y
-        }
-
-        return 250.0  // Default centerline
+        return points.last?.y ?? 250
     }
 
-    // MARK: - Cross-Section Generation
+    // MARK: - Mesh Generation
 
-    /// Generate cross-sections along the aircraft length
-    /// Leading edge defined by cone-plane intersection
-    /// Apex at (0,0,0), symmetric in y
-    static func generateCrossSections(
-        coneAngle: Float,
-        sweepAngle: Float,
-        tiltAngle: Float
-    ) -> [AirfoilSection] {
-
-        var sections: [AirfoilSection] = []
-
-        let numSections = 60
-
-        // Calculate plane normal vector from sweep and tilt angles
-        // This matches the design screen's cone-plane intersection calculation
-        let nx = cos(sweepAngle) * cos(tiltAngle)
-        let ny = sin(sweepAngle) * cos(tiltAngle)
-        let nz = sin(tiltAngle)
-
-        // Plane passes through the midpoint of the cone by default
-        // This can be adjusted with the position parameter in the future
-        let planeX = aircraftLength / 2.0
-
-        // Sample the cone-plane intersection to get the actual leading edge curve
-        // The intersection creates the planform shape (triangle, ellipse, etc.)
-        var leadingEdgePoints: [(x: Float, y: Float, z: Float)] = []
-        let numSamples = 200
-
-        for i in 0..<numSamples {
-            let theta = Float(i) * 2.0 * Float.pi / Float(numSamples)
-            let cosTheta = cos(theta)
-            let sinTheta = sin(theta)
-
-            // Solve for x where plane intersects cone surface at this angle
-            // Plane: nx*x + ny*y + nz*z = nx*planeX
-            // Cone: y = r*cos(θ), z = r*sin(θ), r = x*tan(coneAngle)
-            let denominator = nx + ny * tan(coneAngle) * cosTheta + nz * tan(coneAngle) * sinTheta
-
-            if abs(denominator) > 0.001 {
-                let x = nx * planeX / denominator
-                if x >= 0 && x <= aircraftLength {
-                    let r = x * tan(coneAngle)
-                    let y = r * cosTheta
-                    let z = r * sinTheta
-                    leadingEdgePoints.append((x: x, y: y, z: z))
-                }
-            }
-        }
-
-        if leadingEdgePoints.isEmpty {
-            print("ERROR: No leading edge points found!")
-            return sections
-        }
-
-        // Find the x-extent of the intersection
-        let minX = leadingEdgePoints.map { $0.x }.min() ?? 0
-        let maxX = leadingEdgePoints.map { $0.x }.max() ?? aircraftLength
-
-        print("Cone-plane intersection: minX=\(minX), maxX=\(maxX), range=\(maxX - minX)")
-        print("Leading edge points: \(leadingEdgePoints.count)")
-
-        // Now create sections along the x-axis
-        for i in 0...numSections {
-            let t = Float(i) / Float(numSections)  // 0 to 1
-            let x = minX + t * (maxX - minX)
-
-            // Find all leading edge points at this x position
-            let tolerance: Float = (maxX - minX) / Float(numSections * 2)
-            let pointsAtX = leadingEdgePoints.filter { abs($0.x - x) < tolerance }
-
-            if pointsAtX.isEmpty {
-                continue
-            }
-
-            // Calculate the span (width in Y direction) at this X from leading edge
-            let yValues = pointsAtX.map { $0.y }
-            let halfSpan = max(abs(yValues.min() ?? 0), abs(yValues.max() ?? 0))
-
-            // Ensure minimum span to fit cargo box (8m width needed at payload region)
-            let payloadStart: Float = 30.0
-            let payloadEnd: Float = 50.0
-            var requiredHalfSpan = halfSpan
-
-            if x >= payloadStart && x <= payloadEnd {
-                // Payload region needs at least 4m half-span (8m total)
-                requiredHalfSpan = max(halfSpan, 8.0)
-            }
-
-            // Cap at max width
-            let actualHalfSpan = min(requiredHalfSpan, maxWidth / 2.0)
-
-            // Calculate maximum height at centerline for this X position
-            // Payload region needs 8m height, taper elsewhere
-            var centerlineHeight: Float
-            if x >= payloadStart && x <= payloadEnd {
-                // Payload region: ensure 8m height for cargo box
-                centerlineHeight = 10.0  // A bit more than 8m for clearance
-            } else if x < payloadStart {
-                // Forward taper
-                let t = x / payloadStart
-                centerlineHeight = 1.0 + (10.0 - 1.0) * t
-            } else {
-                // Aft taper
-                let dist = x - payloadEnd
-                let totalAftDist = maxX - payloadEnd
-                let t = 1.0 - (dist / totalAftDist)
-                centerlineHeight = 1.0 + (10.0 - 1.0) * t
-            }
-
-            // Store section data
-            // chord = span (Y width), thickness = not used (we'll use airfoil design directly)
-            // scale = centerline height
-            let section = AirfoilSection(
-                centerX: x,
-                centerY: 0,
-                centerZ: 0,  // Centerline at Z=0
-                chord: actualHalfSpan * 2.0,  // Full span width
-                thickness: 0.12,  // Not used anymore
-                scale: centerlineHeight  // Maximum height at centerline
-            )
-
-            sections.append(section)
-        }
-
-        return sections
-    }
-
-    /// Calculate height at longitudinal position x
-    /// Height accommodates payload in center section
-    static func calculateHeightAtPosition(
-        x: Float,
-        halfWidth: Float
-    ) -> Float {
-
-        // Payload region (middle section) needs 8m height
-        let payloadStart: Float = 30.0  // Start payload region at x=30m
-        let payloadEnd: Float = 50.0    // End payload region at x=50m
-
-        var height: Float
-
-        if x >= payloadStart && x <= payloadEnd {
-            // Payload region - constant height to fit 8m payload
-            height = payloadHeight
-        } else if x < payloadStart {
-            // Forward section - taper from payload height to thinner nose
-            if x < 0.1 {
-                // Very nose - minimal height
-                height = 0.3
-            } else {
-                let t = x / payloadStart
-                // Smooth taper
-                height = 0.3 + (payloadHeight - 0.3) * pow(t, 1.2)
-            }
-        } else {
-            // Aft section - taper from payload height to thinner tail
-            let dist = x - payloadEnd
-            let totalAftDist = aircraftLength - payloadEnd
-            let t = 1.0 - (dist / totalAftDist)
-            // Smooth taper to trailing edge
-            height = 0.5 + (payloadHeight - 0.5) * pow(t, 1.5)
-        }
-
-        // Also scale height based on width (narrower = thinner)
-        // Near leading edge (small width), reduce height
-        let widthFactor = min(1.0, halfWidth / 50.0)  // Full height at 50m+ half-width
-        height *= widthFactor
-
-        return max(0.3, height)
-    }
-
-    // MARK: - Mesh Generation with NURBS-like Interpolation
-
-    /// Generate mesh from cross-sections using smooth interpolation
-    static func generateMeshFromSections(sections: [AirfoilSection]) -> SCNGeometry {
+    static func generateMeshFromSections(sections: [AirfoilSection], baseAirfoil: [AirfoilPoint]) -> SCNGeometry {
 
         var vertices: [SCNVector3] = []
-        var normals: [SCNVector3] = []
         var indices: [Int32] = []
-
-        // Retrieve cross-section spline points from GameManager
-        let crossSectionPoints = GameManager.shared.getCrossSectionPoints()
-
-        let spanwisePoints = 40   // Points across the span (Y direction)
-        let airfoilPoints = 30    // Points defining cross-section profile (for Z direction)
-
-        // Generate the base cross-section shape once (this defines vertical profile)
-        let baseAirfoil = generateCrossSectionFromSpline(crossSectionPoints: crossSectionPoints, numSamples: airfoilPoints)
-
-        print("Using custom spline cross-section with \(crossSectionPoints.topPoints.count) top points, \(crossSectionPoints.bottomPoints.count) bottom points")
-
-        // Generate vertices for each longitudinal cross-section
-        for (_, section) in sections.enumerated() {
-            // At this X position, create vertices across the span
-            // The height tapers from centerline to wingtips
-
-            let halfSpan = section.chord / 2.0  // Maximum Y extent at this X station
-            let centerlineHeight = section.scale  // Maximum height at Y=0
-            let wingtipHeight: Float = 0.25  // Height at maximum Y (wingtips)
-
-            for spanIdx in 0..<spanwisePoints {
-                // Spanwise position from -halfSpan to +halfSpan
-                let spanFraction = Float(spanIdx) / Float(spanwisePoints - 1)  // 0 to 1
-                let yPos = (spanFraction - 0.5) * section.chord  // -halfSpan to +halfSpan
-
-                // Calculate height scaling at this spanwise position
-                // Taper from centerlineHeight at Y=0 to wingtipHeight at Y=±halfSpan
-                let spanRatio = abs(yPos) / halfSpan  // 0 at center, 1 at tips
-                let heightAtThisY = centerlineHeight * (1.0 - spanRatio) + wingtipHeight * spanRatio
-
-                // For each spanwise position, create airfoil profile in Z direction
-                for airfoilIdx in 0..<airfoilPoints {
-                    let t = Float(airfoilIdx) / Float(airfoilPoints - 1)  // 0 to 1
-
-                    // Sample airfoil at this chordwise position
-                    let sampleIdx = Int(t * Float(baseAirfoil.count - 1))
-                    let airfoilPoint = baseAirfoil[min(sampleIdx, baseAirfoil.count - 1)]
-
-                    // Scale airfoil y-coordinate to actual height at this spanwise position
-                    let zPos = section.centerZ + airfoilPoint.y * heightAtThisY
-
-                    let vertex = SCNVector3(
-                        section.centerX,  // Longitudinal (along fuselage)
-                        yPos,              // Spanwise (width)
-                        zPos               // Vertical (height from airfoil, tapered)
-                    )
-
-                    vertices.append(vertex)
-                }
+        
+        // Generate vertices
+        for section in sections {
+            let chord = section.chord // Width
+            let heightScale = section.scale // Height
+            
+            for point in baseAirfoil {
+                // point.x is -0.5 to 0.5
+                // point.y is normalized height (-0.5 to 0.5 approx)
+                
+                let x = section.centerX
+                let y = point.x * chord
+                let z = section.centerY + (point.y * heightScale)
+                
+                vertices.append(SCNVector3(x, y, z))
             }
         }
-
-        // Generate indices to connect the grid
-        let pointsPerSection = spanwisePoints * airfoilPoints
-
-        for sectionIdx in 0..<(sections.count - 1) {
-            let currentSectionStart = sectionIdx * pointsPerSection
-            let nextSectionStart = (sectionIdx + 1) * pointsPerSection
-
-            // Connect vertices between adjacent sections
-            for spanIdx in 0..<(spanwisePoints - 1) {
-                for airfoilIdx in 0..<(airfoilPoints - 1) {
-                    // Four corners of current quad
-                    let i0 = currentSectionStart + spanIdx * airfoilPoints + airfoilIdx
-                    let i1 = currentSectionStart + spanIdx * airfoilPoints + (airfoilIdx + 1)
-                    let i2 = currentSectionStart + (spanIdx + 1) * airfoilPoints + airfoilIdx
-                    let i3 = currentSectionStart + (spanIdx + 1) * airfoilPoints + (airfoilIdx + 1)
-
-                    // Four corners of next section's quad
-                    let i4 = nextSectionStart + spanIdx * airfoilPoints + airfoilIdx
-                    let i5 = nextSectionStart + spanIdx * airfoilPoints + (airfoilIdx + 1)
-                    let i6 = nextSectionStart + (spanIdx + 1) * airfoilPoints + airfoilIdx
-
-                    // Connect current section to next section (longitudinal quads)
-                    indices.append(contentsOf: [
-                        Int32(i0), Int32(i4), Int32(i1),
-                        Int32(i1), Int32(i4), Int32(i5)
-                    ])
-
-                    // Side faces (connect spanwise)
-                    indices.append(contentsOf: [
-                        Int32(i0), Int32(i2), Int32(i4),
-                        Int32(i2), Int32(i6), Int32(i4)
-                    ])
-
-                    // Top/bottom faces (connect along airfoil)
-                    indices.append(contentsOf: [
-                        Int32(i0), Int32(i1), Int32(i2),
-                        Int32(i1), Int32(i3), Int32(i2)
-                    ])
-                }
+        
+        // Generate Indices
+        let pointsPerSection = baseAirfoil.count
+        
+        for i in 0..<(sections.count - 1) {
+            let currentOffset = i * pointsPerSection
+            let nextOffset = (i + 1) * pointsPerSection
+            
+            for j in 0..<(pointsPerSection - 1) {
+                let p0 = Int32(currentOffset + j)
+                let p1 = Int32(currentOffset + j + 1)
+                let p2 = Int32(nextOffset + j)
+                let p3 = Int32(nextOffset + j + 1)
+                
+                // Top Triangle
+                indices.append(contentsOf: [p0, p2, p1])
+                // Bottom Triangle
+                indices.append(contentsOf: [p1, p2, p3])
             }
-
-            // Close the edges (spanwise edges at each airfoil endpoint)
-            for spanIdx in 0..<(spanwisePoints - 1) {
-                // Close front edge (airfoilIdx = 0)
-                let i0 = currentSectionStart + spanIdx * airfoilPoints
-                let i1 = currentSectionStart + (spanIdx + 1) * airfoilPoints
-                let i2 = nextSectionStart + spanIdx * airfoilPoints
-                let i3 = nextSectionStart + (spanIdx + 1) * airfoilPoints
-
-                indices.append(contentsOf: [
-                    Int32(i0), Int32(i2), Int32(i1),
-                    Int32(i1), Int32(i2), Int32(i3)
-                ])
-
-                // Close back edge (airfoilIdx = airfoilPoints-1)
-                let j0 = currentSectionStart + spanIdx * airfoilPoints + (airfoilPoints - 1)
-                let j1 = currentSectionStart + (spanIdx + 1) * airfoilPoints + (airfoilPoints - 1)
-                let j2 = nextSectionStart + spanIdx * airfoilPoints + (airfoilPoints - 1)
-                let j3 = nextSectionStart + (spanIdx + 1) * airfoilPoints + (airfoilPoints - 1)
-
-                indices.append(contentsOf: [
-                    Int32(j0), Int32(j1), Int32(j2),
-                    Int32(j1), Int32(j3), Int32(j2)
-                ])
-            }
+            
+            // Close the loop
+            let p0 = Int32(currentOffset + pointsPerSection - 1)
+            let p1 = Int32(currentOffset + 0)
+            let p2 = Int32(nextOffset + pointsPerSection - 1)
+            let p3 = Int32(nextOffset + 0)
+            
+            indices.append(contentsOf: [p0, p2, p1])
+            indices.append(contentsOf: [p1, p2, p3])
         }
-
-        // Calculate normals
-        normals = calculateNormals(vertices: vertices, indices: indices)
-
-        // Create geometry
+        
+        let normals = calculateNormals(vertices: vertices, indices: indices)
+        
         let vertexSource = SCNGeometrySource(vertices: vertices)
         let normalSource = SCNGeometrySource(normals: normals)
         let indexData = Data(bytes: indices, count: indices.count * MemoryLayout<Int32>.size)
@@ -477,25 +437,33 @@ class LiftingBodyEngine {
             primitiveCount: indices.count / 3,
             bytesPerIndex: MemoryLayout<Int32>.size
         )
-
-        return SCNGeometry(sources: [vertexSource, normalSource], elements: [element])
+        
+        let geo = SCNGeometry(sources: [vertexSource, normalSource], elements: [element])
+        
+        let mat = SCNMaterial()
+        mat.diffuse.contents = UIColor(red: 0.7, green: 0.7, blue: 0.8, alpha: 1.0)
+        mat.metalness.contents = 0.5
+        mat.roughness.contents = 0.3
+        mat.isDoubleSided = true // Important for single-layer meshes
+        geo.materials = [mat]
+        
+        return geo
     }
 
-    /// Calculate vertex normals from triangle data
     static func calculateNormals(vertices: [SCNVector3], indices: [Int32]) -> [SCNVector3] {
         var normals = [SCNVector3](repeating: SCNVector3(0, 0, 0), count: vertices.count)
 
-        // Accumulate face normals
         for i in stride(from: 0, to: indices.count, by: 3) {
             let i0 = Int(indices[i])
             let i1 = Int(indices[i + 1])
             let i2 = Int(indices[i + 2])
 
+            if i0 >= vertices.count || i1 >= vertices.count || i2 >= vertices.count { continue }
+
             let v0 = vertices[i0]
             let v1 = vertices[i1]
             let v2 = vertices[i2]
 
-            // Calculate face normal
             let edge1 = SCNVector3(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z)
             let edge2 = SCNVector3(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z)
 
@@ -505,25 +473,11 @@ class LiftingBodyEngine {
                 edge1.x * edge2.y - edge1.y * edge2.x
             )
 
-            // Accumulate to vertices
-            normals[i0] = SCNVector3(
-                normals[i0].x + normal.x,
-                normals[i0].y + normal.y,
-                normals[i0].z + normal.z
-            )
-            normals[i1] = SCNVector3(
-                normals[i1].x + normal.x,
-                normals[i1].y + normal.y,
-                normals[i1].z + normal.z
-            )
-            normals[i2] = SCNVector3(
-                normals[i2].x + normal.x,
-                normals[i2].y + normal.y,
-                normals[i2].z + normal.z
-            )
+            normals[i0] = SCNVector3(normals[i0].x + normal.x, normals[i0].y + normal.y, normals[i0].z + normal.z)
+            normals[i1] = SCNVector3(normals[i1].x + normal.x, normals[i1].y + normal.y, normals[i1].z + normal.z)
+            normals[i2] = SCNVector3(normals[i2].x + normal.x, normals[i2].y + normal.y, normals[i2].z + normal.z)
         }
 
-        // Normalize
         for i in 0..<normals.count {
             let n = normals[i]
             let length = sqrt(n.x * n.x + n.y * n.y + n.z * n.z)

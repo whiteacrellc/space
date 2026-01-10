@@ -137,12 +137,11 @@ class AircraftVolumeModel {
     static let slushHydrogenDensity = 86.0
 
     static let j58FuelConsumptionGPH = 8000.0
-    static let j58FuelConsumptionLPS = 8000.0 * 3.78541 / 3600.0 
+    static let j58FuelConsumptionLPS = 8000.0 * 3.78541 / 3600.0
     static let j58ThrustN = 150000.0
     static let j58WeightKg = 2400.0
 
     static let jetFuelDensity = 80.0
-    static let slushHydrogenDensity = 86.0
     static let liquidMethaneDensity = 422.0
     static let loxDensity = 1141.0
 
@@ -263,6 +262,89 @@ class AircraftVolumeModel {
             totalMass: masses.totalMass,
             referenceArea: referenceArea
         )
+    }
+
+    // MARK: - Helper Functions
+
+    private static func generateUnitCrossSection(from crossSection: CrossSectionPoints, steps: Int) -> [CGPoint] {
+        var unitShape: [CGPoint] = []
+        let topCurve = interpolateSpline(points: crossSection.topPoints.map { $0.toCGPoint() }, steps: steps)
+        let bottomCurve = interpolateSpline(points: crossSection.bottomPoints.map { $0.toCGPoint() }, steps: steps).reversed()
+
+        let allPoints = topCurve + bottomCurve
+        let minX = allPoints.map { $0.x }.min() ?? 0
+        let maxX = allPoints.map { $0.x }.max() ?? 1
+        let minY = allPoints.map { $0.y }.min() ?? 0
+        let maxY = allPoints.map { $0.y }.max() ?? 1
+
+        let rangeX = max(maxX - minX, 1)
+        let rangeY = max(maxY - minY, 1)
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
+
+        for point in topCurve {
+            let normalizedX = (point.x - centerX) / rangeX * 2.0
+            let normalizedY = (point.y - centerY) / rangeY * 2.0
+            unitShape.append(CGPoint(x: normalizedX, y: normalizedY))
+        }
+        for point in bottomCurve {
+            let normalizedX = (point.x - centerX) / rangeX * 2.0
+            let normalizedY = (point.y - centerY) / rangeY * 2.0
+            unitShape.append(CGPoint(x: normalizedX, y: normalizedY))
+        }
+        return unitShape
+    }
+
+    private static func interpolateSpline(points: [CGPoint], steps: Int) -> [CGPoint] {
+        var result: [CGPoint] = []
+        guard points.count >= 3 else { return points }
+
+        for i in 0..<(points.count - 2) / 2 {
+            let p0 = points[i * 2]
+            let p1 = points[i * 2 + 1]
+            let p2 = points[i * 2 + 2]
+
+            for j in 0...steps {
+                let t = Double(j) / Double(steps)
+                let x = (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x
+                let y = (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y
+                result.append(CGPoint(x: x, y: y))
+            }
+        }
+        return result
+    }
+
+    private static func getPlanformWidth(at x: Double, planform: TopViewPlanform) -> Double {
+        let noseTip = planform.noseTip.toCGPoint()
+        let frontControlLeft = planform.frontControlLeft.toCGPoint()
+        let midLeft = planform.midLeft.toCGPoint()
+        let rearControlLeft = planform.rearControlLeft.toCGPoint()
+        let tailLeft = planform.tailLeft.toCGPoint()
+
+        if x < noseTip.x {
+            return 0.0
+        }
+
+        if x <= midLeft.x {
+            let segmentLength = midLeft.x - noseTip.x
+            if segmentLength <= 0 { return 0.0 }
+            let t = (x - noseTip.x) / segmentLength
+            return solveQuadraticBezierY(t: t, p0: noseTip, p1: frontControlLeft, p2: midLeft)
+        }
+
+        if x <= tailLeft.x {
+            let segmentLength = tailLeft.x - midLeft.x
+            if segmentLength <= 0 { return midLeft.y }
+            let t = (x - midLeft.x) / segmentLength
+            return solveQuadraticBezierY(t: t, p0: midLeft, p1: rearControlLeft, p2: tailLeft)
+        }
+
+        return 0.0
+    }
+
+    private static func solveQuadraticBezierY(t: Double, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> Double {
+        let u = 1 - t
+        return u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y
     }
 }
 

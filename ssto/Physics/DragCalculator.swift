@@ -1,152 +1,238 @@
+//
+//  DragCalculator.swift
+//  ssto
+//
+//  Calculates aerodynamic forces (Drag) based on aircraft geometry and flight conditions.
+//  Implements a component buildup method for drag estimation:
+//  Total Cd = Cd0_compressible(Mach) + Cdi(Lift, Mach)
+//
+
 import Foundation
 import SceneKit
 import CoreGraphics
 
+// MARK: - Aerodynamic Configuration
+
+/// Stores derived geometric and aerodynamic properties of the aircraft
+struct AerodynamicConfiguration {
+    let referenceArea: Double       // Planform Area (m²) - S
+    let wingspan: Double            // Wingspan (m) - b
+    let aspectRatio: Double         // AR = b² / S
+    let oswaldEfficiency: Double    // e (0.7 - 0.9 typically)
+    let dragMultiplier: Double      // Shape factor from design (1.0 nominal)
+    
+    /// Initialize from raw geometry
+    init(planform: TopViewPlanform, design: PlaneDesign) {
+        // Calculate geometry
+        let (area, span) = GeometryAnalyzer.calculatePlanformProperties(planform: planform)
+        
+        self.referenceArea = max(1.0, area) // Avoid div/0
+        self.wingspan = span
+        self.aspectRatio = (span * span) / self.referenceArea
+        
+        // Estimate Oswald Efficiency based on Sweep
+        // Highly swept wings typically have lower 'e' at low speeds but are optimized for high speed
+        // Simple approximation:
+        self.oswaldEfficiency = 0.85
+        
+        self.dragMultiplier = design.dragMultiplier()
+    }
+}
+
+// MARK: - Geometry Analyzer
+
+/// Helper to calculate geometric properties from design data
+class GeometryAnalyzer {
+    
+    /// Calculate Planform Area (S) and Wingspan (b)
+    static func calculatePlanformProperties(planform: TopViewPlanform) -> (area: Double, span: Double) {
+        let noseX = planform.noseTip.x
+        let tailX = planform.tailLeft.x
+        let length = planform.aircraftLength
+        
+        // Canvas to Meters scale factor
+        let scale = length / max(1.0, tailX - noseX)
+        
+        // Numerical Integration for Area
+        let steps = 100
+        let dx = (tailX - noseX) / Double(steps)
+        var totalAreaCanvas: Double = 0.0
+        var maxHalfSpanCanvas: Double = 0.0
+        
+        for i in 0...steps {
+            let x = noseX + Double(i) * dx
+            // getPlanformWidth returns total width or half width?
+            // DragCalculator original impl seems to imply half width logic in bezier solve (y coordinates)
+            // Let's verify: midLeft.y is ~ -80. So getPlanformWidth returning abs(y) is half-width.
+            let halfWidth = getPlanformHalfWidth(at: x, planform: planform)
+            
+            if i == 0 || i == steps {
+                totalAreaCanvas += halfWidth
+            } else {
+                totalAreaCanvas += 2.0 * halfWidth
+            }
+            
+            if halfWidth > maxHalfSpanCanvas {
+                maxHalfSpanCanvas = halfWidth
+            }
+        }
+        
+        totalAreaCanvas *= (dx / 2.0)
+        
+        // Total Planform Area = 2 * Half Area (Symmetric)
+        let totalPlanformAreaCanvas = totalAreaCanvas * 2.0
+        let fullSpanCanvas = maxHalfSpanCanvas * 2.0
+        
+        // Convert to Meters
+        // Area scales with scale^2
+        let areaMeters = totalPlanformAreaCanvas * scale * scale
+        // Span scales with scale
+        let spanMeters = fullSpanCanvas * scale
+        
+        return (areaMeters, spanMeters)
+    }
+    
+    /// Interpolates the Top View Planform to get half-width at a given X (Canvas Units)
+    static func getPlanformHalfWidth(at x: Double, planform: TopViewPlanform) -> Double {
+        let noseTip = planform.noseTip.toCGPoint()
+        let frontControlLeft = planform.frontControlLeft.toCGPoint()
+        let midLeft = planform.midLeft.toCGPoint()
+        let rearControlLeft = planform.rearControlLeft.toCGPoint()
+        let tailLeft = planform.tailLeft.toCGPoint()
+
+        // Before nose
+        if x < noseTip.x { return 0.0 }
+        
+        // Fuselage Body
+        var halfWidth: Double = 0.0
+        
+        if x <= midLeft.x {
+            let segmentLength = midLeft.x - noseTip.x
+            if segmentLength <= 0 { return 0.0 }
+            let t = (x - noseTip.x) / segmentLength
+            halfWidth = solveQuadraticBezierY(t: t, p0: noseTip, p1: frontControlLeft, p2: midLeft)
+        } else if x <= tailLeft.x {
+            let segmentLength = tailLeft.x - midLeft.x
+            if segmentLength <= 0 { return abs(midLeft.y) }
+            let t = (x - midLeft.x) / segmentLength
+            halfWidth = solveQuadraticBezierY(t: t, p0: midLeft, p1: rearControlLeft, p2: tailLeft)
+        } else {
+            return abs(tailLeft.y)
+        }
+        
+        // Wing contribution
+        // Check if we need to add wings. The legacy DragCalculator logic relied on "PlanformWidth"
+        // which seemed to just be the fuselage spline.
+        // However, LiftingBody.swift has wing logic:
+        // wingStartX = nose + length * wingStartPos
+        // wingTip = fuselageWidthAtTail + wingSpan
+        // For accurate drag, we MUST include wing area.
+        
+        let fuselageLen = tailLeft.x - noseTip.x
+        let wingStartX = noseTip.x + (fuselageLen * planform.wingStartPosition)
+        let wingEndX = tailLeft.x
+        
+        if x >= wingStartX && x <= wingEndX {
+            let t = (x - wingStartX) / (wingEndX - wingStartX)
+            
+            // Fuselage width at start/end of wing
+            // We can approximate or re-calc. For speed, let's assume linear growth of wing
+            // from fuselage surface.
+            
+            // Re-calculate fuselage width at start/end to be precise
+            // But 'halfWidth' is already the fuselage width at current X.
+            // The wing extends BEYOND this.
+            
+            // Wait, TopViewShapeView draws wings separately.
+            // The wing is a triangle added to the side.
+            // Leading edge starts at (wingStartX, fuselageWidth(wingStartX))
+            // Trailing edge ends at (wingEndX, fuselageWidth(wingEndX) + wingSpan)
+            // This is a swept delta wing attached to the side.
+            
+            // Get fuselage width at wing end (tail)
+            let tailHalfWidth = abs(tailLeft.y)
+            let wingTipY = tailHalfWidth + planform.wingSpan
+            
+            // Get fuselage width at wing start
+            // (Recursively call self? No, extract logic)
+            // Just assume the current `halfWidth` is the inner boundary.
+            
+            // Interpolate outer boundary
+            // Outer boundary goes from (wingStartX, fuselageWidthAtStart) -> (wingEndX, wingTipY)
+            let fuselageWidthAtStart = getFuselageOnlyHalfWidth(at: wingStartX, planform: planform)
+            
+            let outerY = fuselageWidthAtStart + (wingTipY - fuselageWidthAtStart) * t
+            
+            // If the wing sticks out further than the fuselage, that's our new max width
+            halfWidth = max(halfWidth, outerY)
+        }
+        
+        return halfWidth
+    }
+    
+    private static func getFuselageOnlyHalfWidth(at x: Double, planform: TopViewPlanform) -> Double {
+        let noseTip = planform.noseTip.toCGPoint()
+        let frontControlLeft = planform.frontControlLeft.toCGPoint()
+        let midLeft = planform.midLeft.toCGPoint()
+        let rearControlLeft = planform.rearControlLeft.toCGPoint()
+        let tailLeft = planform.tailLeft.toCGPoint()
+        
+        if x < noseTip.x { return 0.0 }
+        if x <= midLeft.x {
+            let t = (x - noseTip.x) / max(1.0, midLeft.x - noseTip.x)
+            return solveQuadraticBezierY(t: max(0, min(1, t)), p0: noseTip, p1: frontControlLeft, p2: midLeft)
+        } else if x <= tailLeft.x {
+            let t = (x - midLeft.x) / max(1.0, tailLeft.x - midLeft.x)
+            return solveQuadraticBezierY(t: max(0, min(1, t)), p0: midLeft, p1: rearControlLeft, p2: tailLeft)
+        }
+        return abs(tailLeft.y)
+    }
+
+    private static func solveQuadraticBezierY(t: Double, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> Double {
+        let u = 1 - t
+        let y = u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y
+        return abs(y)
+    }
+}
+
+// MARK: - Drag Calculator
+
 /**
  A Swift module for calculating aerodynamic properties, specifically the Drag Coefficient (Cd),
  for an aircraft at various flight regimes.
-
- The calculation relies on a simplified International Standard Atmosphere (ISA) model to determine
- air density and speed of sound at the given altitude, and a piecewise function to estimate Cd
- based on the resultant Mach number and altitude.
-
- Assumptions:
- - Altitude is in meters (m).
- - Velocity is in meters per second (m/s).
- - The drag coefficient is estimated for a streamlined aircraft across different Mach regimes.
+ 
+ Uses Reference Area (S) for all coefficient calculations.
  */
 class DragCalculator {
 
     // Aircraft characteristics
-    private var projectedArea: Double = 0.0
-    private let baselineDragCoefficient: Double
-    private let planeDesign: PlaneDesign
+    private var config: AerodynamicConfiguration
+    private let baselineZeroLiftCd: Double // Cd0_subsonic
 
-    init(baselineDragCoefficient: Double = 0.045, // Streamlined Airfoil shape estimate
-         planeDesign: PlaneDesign = PlaneDesign.defaultDesign) {
-        self.baselineDragCoefficient = baselineDragCoefficient
-        self.planeDesign = planeDesign
-        self.projectedArea = calculateProjectedArea()
-        print("DragCalculator initialized with Projected Frontal Area: \(String(format: "%.2f", projectedArea)) m²")
+    /// Initialize with optional overrides or current game state
+    init(baselineDragCoefficient: Double = 0.020,
+         planeDesign: PlaneDesign? = nil,
+         planform: TopViewPlanform? = nil) {
+        
+        self.baselineZeroLiftCd = baselineDragCoefficient
+        
+        // Use provided values or fall back to GameManager
+        let effectivePlanform = planform ?? GameManager.shared.getTopViewPlanform()
+        let effectiveDesign = planeDesign ?? GameManager.shared.getPlaneDesign()
+        
+        self.config = AerodynamicConfiguration(planform: effectivePlanform, design: effectiveDesign)
+        
+        print("DragCalculator Initialized:")
+        print("  Reference Area (S): \(String(format: "%.2f", config.referenceArea)) m²")
+        print("  Wingspan (b): \(String(format: "%.2f", config.wingspan)) m")
+        print("  Aspect Ratio (AR): \(String(format: "%.2f", config.aspectRatio))")
     }
     
     // MARK: - Drag Calculation
     
     /**
-     Calculate drag force acting on the aircraft.
-
-     Uses accurate Mach-dependent drag coefficients and atmospheric models.
-
-     - Parameters:
-       - altitude: Altitude in meters
-       - velocity: Velocity in meters per second
-     - Returns: Drag force in Newtons
-     */
-    func calculateDrag(altitude: Double, velocity: Double) -> Double {
-        guard altitude >= 0, velocity >= 0 else {
-            return 0.0
-        }
-
-        // Get atmospheric data from AtmosphereModel
-        let density = AtmosphereModel.atmosphericDensity(at: altitude)
-        let speedOfSound = AtmosphereModel.speedOfSound(at: altitude)
-
-        // Calculate Mach number
-        let mach = velocity / speedOfSound
-
-        // Get drag coefficient for current conditions
-        let cd = getDragCoefficient(Ma: mach)
-
-        // Calculate drag force: F_drag = 0.5 * ρ * v² * C_d * A
-        let dragForce = 0.5 * density * velocity * velocity * cd * projectedArea
-
-        return dragForce
-    }
-
-    /**
-     Get the drag coefficient at specified Mach number and altitude.
-
-     - Parameters:
-       - mach: Mach number
-       - altitude: Altitude in meters
-     - Returns: Drag coefficient (Cd)
-     */
-    func getCd(mach: Double, altitude: Double) -> Double {
-        return getDragCoefficient(Ma: mach)
-    }
-
-    /**
-     Estimates the Drag Coefficient (Cd) of a streamlined aircraft based on Mach number and altitude.
-
-     Aircraft drag varies significantly across flight regimes, with transonic drag rise
-     being particularly important for reaching orbit.
-
-     - Parameters:
-       - Ma: The Mach number (velocity / speed of sound).
-     - Returns: The estimated Parasitic/Wave Drag Coefficient (unitless).
-     */
-    private func getDragCoefficient(Ma: Double) -> Double {
-        var cd = baselineDragCoefficient
-
-        if Ma < 0.8 {
-            // Subsonic flow: Low drag for streamlined aircraft
-            cd = baselineDragCoefficient * 1.0
-
-        } else if Ma < 1.2 {
-            // Transonic flow (0.8 <= Ma < 1.2): Dramatic drag rise
-            // Wave drag begins, shock waves form
-            let delta = Ma - 0.8
-            let dragRiseMultiplier = 1.0 + delta * delta * 15.0
-            cd = baselineDragCoefficient * dragRiseMultiplier
-
-        } else if Ma < 5.0 {
-            // Supersonic flow (Ma >= 1.2): High wave drag, decreases with Mach
-            // Peak drag just past Mach 1, then gradually decreases
-            let supersonicFactor = 1.2 / Ma
-            let waveDragMultiplier = 5.0 + supersonicFactor * 4.0
-            cd = baselineDragCoefficient * waveDragMultiplier
-
-        } else {
-            // Hypersonic flow (Ma >= 5.0): Drag Coefficient decreases asymptotically
-            // At high Mach, wave drag coefficient decreases (roughly 1/M^2 trend),
-            // but viscous interaction increases.
-            // We model a decay from the supersonic level (~6.0) down to a high-speed floor (~2.5).
-            let decay = exp(-(Ma - 5.0) / 10.0)
-            cd = baselineDragCoefficient * (2.5 + 3.5 * decay)
-        }
-
-        // Apply plane design drag multiplier (shape factor)
-        cd *= planeDesign.dragMultiplier()
-
-        return cd
-    }
-
-    /**
-     Calculate induced drag coefficient based on lift.
-     C_di = k * C_L² = C_L² / (π * AR * e)
-     
-     - Parameters:
-       - lift: Lift force in Newtons
-       - dynamicPressure: q = 0.5 * rho * v²
-     - Returns: Induced Drag Coefficient
-     */
-    private func getInducedDragCoefficient(lift: Double, dynamicPressure: Double) -> Double {
-        guard dynamicPressure > 0 else { return 0.0 }
-        
-        let cl = lift / (dynamicPressure * projectedArea)
-        
-        // Estimate Aspect Ratio (AR) from planform
-        // AR = b² / S. Here we approximate based on planeDesign width/length
-        // For a lifting body, AR is low (0.5 - 1.5)
-        let aspectRatio = 1.0 // Simplified
-        let efficiency = 0.8 // Oswald efficiency factor
-        
-        let k = 1.0 / (Double.pi * aspectRatio * efficiency)
-        return k * cl * cl
-    }
-
-    /**
-     Calculate total drag force acting on the aircraft, including induced drag.
+     Calculate total drag force acting on the aircraft.
+     F_drag = q * S * (Cd0(M) + Cdi(M, CL))
      
      - Parameters:
        - altitude: Altitude in meters
@@ -159,37 +245,110 @@ class DragCalculator {
             return 0.0
         }
 
-        // Get atmospheric data from AtmosphereModel
+        // 1. Atmosphere
         let density = AtmosphereModel.atmosphericDensity(at: altitude)
         let speedOfSound = AtmosphereModel.speedOfSound(at: altitude)
 
-        // Calculate Mach number
+        // 2. Flight Conditions
         let mach = velocity / speedOfSound
         let dynamicPressure = 0.5 * density * velocity * velocity
-
-        // 1. Parasitic + Wave Drag (Zero-Lift)
-        let cd0 = getDragCoefficient(Ma: mach)
         
-        // 2. Induced Drag (Lift-Dependent)
-        let cdi = getInducedDragCoefficient(lift: lift, dynamicPressure: dynamicPressure)
+        guard dynamicPressure > 0.001 else { return 0.0 }
+
+        // 3. Coefficients
+        // Zero-Lift Drag Coefficient (Parasitic + Wave)
+        let cd0 = getZeroLiftDragCoefficient(Ma: mach)
+        
+        // Induced Drag Coefficient (Lift-Dependent)
+        // Cdi = k * CL²
+        let cl = lift / (dynamicPressure * config.referenceArea)
+        let cdi = getInducedDragCoefficient(cl: cl, mach: mach)
         
         // Total Cd
         let totalCd = cd0 + cdi
 
-        // Calculate drag force: F_drag = q * C_d * A
-        let dragForce = dynamicPressure * totalCd * projectedArea
+        // 4. Force
+        let dragForce = dynamicPressure * totalCd * config.referenceArea
 
         return dragForce
     }
 
+    /**
+     Get the zero-lift drag coefficient (Cd0) at specified Mach number.
+     Includes skin friction, form drag, and zero-lift wave drag.
+     */
+    func getCd0(mach: Double) -> Double {
+        return getZeroLiftDragCoefficient(Ma: mach)
+    }
     
     /**
-     Get diagnostic information about current flight regime.
+     Get the drag coefficient (Cd) at specified Mach number and altitude.
+     Currently returns the zero-lift drag coefficient (Cd0).
+     Kept for backward compatibility.
+     */
+    func getCd(mach: Double, altitude: Double) -> Double {
+        return getCd0(mach: mach)
+    }
 
-     - Parameters:
-       - velocity: Velocity in meters per second
-       - altitude: Altitude in meters
-     - Returns: String describing the current regime
+    /**
+     Estimates the Zero-Lift Drag Coefficient (Cd0) based on Mach number.
+     References Planform Area.
+     */
+    private func getZeroLiftDragCoefficient(Ma: Double) -> Double {
+        var cd = baselineZeroLiftCd
+
+        if Ma < 0.8 {
+            // Subsonic: Constant Cd0
+            cd = baselineZeroLiftCd
+
+        } else if Ma < 1.2 {
+            // Transonic: Drag Divergence
+            // Quadratic rise to peak
+            let delta = Ma - 0.8
+            let dragRiseFactor = 1.0 + delta * delta * 20.0 // Peak ~4x baseline at Mach 1.2
+            cd = baselineZeroLiftCd * dragRiseFactor
+
+        } else if Ma < 4.0 {
+            // Supersonic: Wave drag dominates but coefficient drops with Mach (Prandtl-Glauert / Ackeret)
+            // Model: Peak at 1.2, then decay roughly proportional to 1/sqrt(M^2 - 1)
+            // Simplified algebraic decay
+            let peakCd = baselineZeroLiftCd * 4.2 // Peak value
+            let factor = (Ma - 1.2) / 2.8
+            // Linear-ish decay for simplicity in this range
+            cd = peakCd - (peakCd - baselineZeroLiftCd * 2.0) * factor
+
+        } else {
+            // Hypersonic: High speed floor
+            // Viscous interaction effects might increase it slightly, but generally Cd is low
+            cd = baselineZeroLiftCd * 2.0
+        }
+
+        // Apply plane design drag multiplier (shape factor penalty)
+        cd *= config.dragMultiplier
+
+        return cd
+    }
+
+    /**
+     Calculate induced drag coefficient.
+     C_di = C_L² / (π * AR * e)
+     
+     Note: In supersonic flow, "e" effectively decreases, or we can model wave drag due to lift.
+     For simplicity, we assume standard induced drag formula but 'e' could degrade with Mach.
+     */
+    private func getInducedDragCoefficient(cl: Double, mach: Double) -> Double {
+        // Oswald efficiency degradation with Mach (simplified)
+        var e = config.oswaldEfficiency
+        if mach > 1.0 {
+            e *= 0.6 // Significant efficiency loss in supersonic lift
+        }
+        
+        let k = 1.0 / (Double.pi * config.aspectRatio * e)
+        return k * cl * cl
+    }
+
+    /**
+     Get diagnostic information about current flight regime.
      */
     func getDragRegime(velocity: Double, altitude: Double) -> String {
         let speedOfSound = AtmosphereModel.speedOfSound(at: altitude)
@@ -199,256 +358,13 @@ class DragCalculator {
         if mach < 0.8 {
             regime = "Subsonic"
         } else if mach < 1.2 {
-            regime = "Transonic (High Drag)"
+            regime = "Transonic"
         } else if mach < 5.0 {
             regime = "Supersonic"
         } else {
             regime = "Hypersonic"
         }
 
-        let altitudeKm = altitude / 1000.0
-        return "\(regime) at \(String(format: "%.1f", altitudeKm)) km"
-    }
-    
-    // MARK: - Wireframe & Projected Area Calculation
-    
-    /// Calculate the Projected Frontal Area using the wireframe approximation method.
-    /// This replicates the logic from WireframeViewController to generate the mesh,
-    /// then calculates the area of forward-facing surfaces (Cosine Projection).
-    private func calculateProjectedArea() -> Double {
-        // 1. Get Data from GameManager
-        let profile = GameManager.shared.getSideProfile()
-        let planform = GameManager.shared.getTopViewPlanform()
-        let crossSection = GameManager.shared.getCrossSectionPoints()
-        
-        // 2. Prepare Unit Cross Section (Normalized to [-1, 1] range)
-        let unitShape = generateUnitCrossSection(from: crossSection, steps: 5)
-        
-        // 3. Generate Mesh Points
-        var meshPoints: [[SCNVector3]] = []
-        let numRibs = 40
-        
-        // Determine X bounds
-        let startX = min(planform.noseTip.x, profile.frontStart.x)
-        let endX = max(planform.tailLeft.x, profile.exhaustEnd.x)
-        
-        // Conversion factor from canvas units to meters
-        // Aircraft length is defined in TopViewPlanform
-        let aircraftLengthMeters = planform.aircraftLength
-        let canvasLength = endX - startX
-        let metersPerUnit = aircraftLengthMeters / canvasLength
-        
-        for i in 0...numRibs {
-            let t = Double(i) / Double(numRibs)
-            let x = startX + t * (endX - startX)
-            
-            // Get Dimensions at X
-            let halfWidth = getPlanformWidth(at: x, planform: planform)
-            let (zTop, zBottom) = getProfileHeight(at: x, profile: profile)
-            
-            let height = max(0.1, zTop - zBottom)
-            let zCenter = (zTop + zBottom) / 2.0
-            let validHalfWidth = max(0.1, halfWidth)
-            
-            var ribPoints: [SCNVector3] = []
-            for unitPoint in unitShape {
-                let finalY = unitPoint.x * validHalfWidth
-                let finalZ = zCenter + (unitPoint.y * height / 2.0)
-                
-                // Scale to meters immediately for accurate area
-                ribPoints.append(SCNVector3(
-                    Float(x * metersPerUnit),
-                    Float(finalY * metersPerUnit),
-                    Float(finalZ * metersPerUnit)
-                ))
-            }
-            meshPoints.append(ribPoints)
-        }
-        
-        // 4. Calculate Projected Frontal Area
-        // Sum of (Area * Normal.x) for all forward-facing triangles
-        // Flow direction is assumed -X (aircraft moving +X), so forward faces have Normal.x > 0
-        
-        var totalProjectedArea: Double = 0.0
-        
-        for i in 0..<meshPoints.count - 1 {
-            let currentRib = meshPoints[i]
-            let nextRib = meshPoints[i+1]
-            
-            // Iterate around the rib loop
-            for j in 0..<currentRib.count {
-                let currentIdx = j
-                let nextIdx = (j + 1) % currentRib.count
-                
-                // Quad vertices
-                let p0 = currentRib[currentIdx]
-                let p1 = nextRib[currentIdx]
-                let p2 = nextRib[nextIdx]
-                let p3 = currentRib[nextIdx]
-                
-                // Decompose into two triangles: (p0, p1, p2) and (p0, p2, p3)
-                // Ensure counter-clockwise winding (looking from outside)
-                // Ribs are generated sequentially along X.
-                // p0->p3 is along current rib. p1->p2 is along next rib.
-                // p0->p1 is along stringer.
-                
-                totalProjectedArea += calculateTriangleProjectedArea(v0: p0, v1: p1, v2: p2)
-                totalProjectedArea += calculateTriangleProjectedArea(v0: p0, v1: p2, v2: p3)
-            }
-        }
-        
-        // The mesh is hollow (no end caps), but for a closed fuselage, the caps are usually negligible
-        // or effectively zero if tapered to a point.
-        // We take the absolute value as a safeguard, but strictly we summed N.x * Area
-        return abs(totalProjectedArea)
-    }
-    
-    private func calculateTriangleProjectedArea(v0: SCNVector3, v1: SCNVector3, v2: SCNVector3) -> Double {
-        // Calculate Normal
-        // Edge vectors
-        let e1 = SCNVector3(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z)
-        let e2 = SCNVector3(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z)
-        
-        // Cross product: N = e1 x e2
-        let normal = SCNVector3(
-            e1.y * e2.z - e1.z * e2.y,
-            e1.z * e2.x - e1.x * e2.z,
-            e1.x * e2.y - e1.y * e2.x
-        )
-        
-        // Area of triangle = 0.5 * |N|
-        // Projected Area = Area * (UnitNormal . X_axis)
-        //                = 0.5 * |N| * (N.x / |N|)
-        //                = 0.5 * N.x
-        
-        // We only want forward-facing surfaces (Normal.x > 0)
-        if normal.x > 0 {
-            return Double(0.5 * normal.x)
-        }
-        return 0.0
-    }
-    
-    // MARK: - Geometry Helpers (Ported from WireframeViewController)
-
-    private func generateUnitCrossSection(from crossSection: CrossSectionPoints, steps: Int) -> [CGPoint] {
-        var unitShape: [CGPoint] = []
-        let topCurve = interpolateSpline(points: crossSection.topPoints.map { $0.toCGPoint() }, steps: steps)
-        let bottomCurve = interpolateSpline(points: crossSection.bottomPoints.map { $0.toCGPoint() }, steps: steps).reversed()
-
-        let allPoints = topCurve + bottomCurve
-        let minX = allPoints.map { $0.x }.min() ?? 0
-        let maxX = allPoints.map { $0.x }.max() ?? 1
-        let minY = allPoints.map { $0.y }.min() ?? 0
-        let maxY = allPoints.map { $0.y }.max() ?? 1
-
-        let rangeX = max(maxX - minX, 1)
-        let rangeY = max(maxY - minY, 1)
-        let centerX = (minX + maxX) / 2
-        let centerY = (minY + maxY) / 2
-
-        for point in topCurve {
-            let normalizedX = (point.x - centerX) / rangeX * 2.0
-            let normalizedY = (point.y - centerY) / rangeY * 2.0
-            unitShape.append(CGPoint(x: normalizedX, y: normalizedY))
-        }
-        for point in bottomCurve {
-            let normalizedX = (point.x - centerX) / rangeX * 2.0
-            let normalizedY = (point.y - centerY) / rangeY * 2.0
-            unitShape.append(CGPoint(x: normalizedX, y: normalizedY))
-        }
-        return unitShape
-    }
-
-    private func interpolateSpline(points: [CGPoint], steps: Int) -> [CGPoint] {
-        guard points.count >= 2 else { return points }
-        var result: [CGPoint] = []
-        for i in 0..<points.count - 1 {
-            let p0 = points[max(i - 1, 0)]
-            let p1 = points[i]
-            let p2 = points[i + 1]
-            let p3 = points[min(i + 2, points.count - 1)]
-            let (cp1, cp2) = SplineCalculator.calculateControlPoints(p0: p0, p1: p1, p2: p2, p3: p3)
-            for t in 0..<steps {
-                let u = CGFloat(t) / CGFloat(steps)
-                result.append(cubicBezier(t: u, p0: p1, p1: cp1, p2: cp2, p3: p2))
-            }
-        }
-        result.append(points.last!)
-        return result
-    }
-
-    private func cubicBezier(t: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint, p3: CGPoint) -> CGPoint {
-        let u = 1 - t
-        let tt = t * t
-        let uu = u * u
-        let uuu = uu * u
-        let ttt = tt * t
-        let x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x
-        let y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y
-        return CGPoint(x: x, y: y)
-    }
-
-    private func getPlanformWidth(at x: Double, planform: TopViewPlanform) -> Double {
-        let noseTip = planform.noseTip.toCGPoint()
-        let frontControlLeft = planform.frontControlLeft.toCGPoint()
-        let midLeft = planform.midLeft.toCGPoint()
-        let rearControlLeft = planform.rearControlLeft.toCGPoint()
-        let tailLeft = planform.tailLeft.toCGPoint()
-
-        if x <= midLeft.x {
-            let y = interpolatePlanformBezierY(x: CGFloat(x), p0: noseTip, p1: frontControlLeft, p2: midLeft)
-            return abs(y)
-        } else if x <= tailLeft.x {
-            let y = interpolatePlanformBezierY(x: CGFloat(x), p0: midLeft, p1: rearControlLeft, p2: tailLeft)
-            return abs(y)
-        } else {
-            return abs(tailLeft.y)
-        }
-    }
-
-    private func interpolatePlanformBezierY(x: CGFloat, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> CGFloat {
-        var tMin: CGFloat = 0.0
-        var tMax: CGFloat = 1.0
-        var t: CGFloat = 0.5
-        for _ in 0..<20 {
-            let currentX = (1-t)*(1-t)*p0.x + 2*(1-t)*t*p1.x + t*t*p2.x
-            if abs(currentX - x) < 0.1 { break }
-            if currentX < x { tMin = t } else { tMax = t }
-            t = (tMin + tMax) / 2
-        }
-        return (1-t)*(1-t)*p0.y + 2*(1-t)*t*p1.y + t*t*p2.y
-    }
-
-    private func getProfileHeight(at x: Double, profile: SideProfileShape) -> (Double, Double) {
-        let bottomZ: Double
-        let frontStart = profile.frontStart.toCGPoint()
-        let frontControl = profile.frontControl.toCGPoint()
-        let frontEnd = profile.frontEnd.toCGPoint()
-        let engineEnd = profile.engineEnd.toCGPoint()
-        let exhaustControl = profile.exhaustControl.toCGPoint()
-        let exhaustEnd = profile.exhaustEnd.toCGPoint()
-
-        if x <= frontEnd.x {
-            let t = (x - frontStart.x) / (frontEnd.x - frontStart.x)
-            bottomZ = solveQuadraticBezierY(t: max(0, min(1, t)), p0: frontStart, p1: frontControl, p2: frontEnd)
-        } else if x <= engineEnd.x {
-            bottomZ = frontEnd.y
-        } else {
-            let t = (x - engineEnd.x) / (exhaustEnd.x - engineEnd.x)
-            bottomZ = solveQuadraticBezierY(t: max(0, min(1, t)), p0: engineEnd, p1: exhaustControl, p2: exhaustEnd)
-        }
-
-        let topStart = profile.topStart.toCGPoint()
-        let topControl = profile.topControl.toCGPoint()
-        let topEnd = profile.topEnd.toCGPoint()
-        let tTop = (x - topStart.x) / (topEnd.x - topStart.x)
-        let topZ = solveQuadraticBezierY(t: max(0, min(1, tTop)), p0: topStart, p1: topControl, p2: topEnd)
-
-        return (topZ, bottomZ)
-    }
-
-    private func solveQuadraticBezierY(t: Double, p0: CGPoint, p1: CGPoint, p2: CGPoint) -> Double {
-        let u = 1 - t
-        return u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y
+        return "\(regime) (M \(String(format: "%.2f", mach)))"
     }
 }

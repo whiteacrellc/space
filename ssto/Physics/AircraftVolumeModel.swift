@@ -82,7 +82,275 @@ class AircraftVolumeModel {
         
         return totalVolume
     }
-    
+
+    /// Surface area breakdown by region
+    struct SurfaceAreaBreakdown {
+        let noseCap: Double         // First 5% of length - 30 kg/m²
+        let leadingEdges: Double    // Next 15% of length, side-facing - 30 kg/m²
+        let topSurface: Double      // Upper skin - 8 kg/m²
+        let bottomSurface: Double   // Lower fuselage - 12 kg/m²
+        let engineInlet: Double     // Inlet region - 15 kg/m²
+        let total: Double
+    }
+
+    /// Calculate wetted surface area from 3D mesh geometry
+    /// Returns area breakdown by region in square meters (m²)
+    static func calculateWettedSurfaceArea() -> SurfaceAreaBreakdown {
+        // 1. Get design data
+        let profile = GameManager.shared.getSideProfile()
+        let planform = GameManager.shared.getTopViewPlanform()
+        let crossSection = GameManager.shared.getCrossSectionPoints()
+
+        // 2. Generate unit cross section (reuse existing logic)
+        let unitShape = generateUnitCrossSection(from: crossSection, steps: 5)
+
+        // 3. Generate mesh ribs along aircraft length (40 ribs, same as volume calc)
+        var meshRibs: [[SCNVector3]] = []
+        let numRibs = 40
+
+        let startX = min(planform.noseTip.x, profile.frontStart.x)
+        let endX = max(planform.tailLeft.x, profile.exhaustEnd.x)
+
+        // Convert canvas units to meters
+        let aircraftLengthMeters = planform.aircraftLength
+        let canvasLength = endX - startX
+        let metersPerUnit = aircraftLengthMeters / canvasLength
+
+        for i in 0...numRibs {
+            let t = Double(i) / Double(numRibs)
+            let x = startX + t * (endX - startX)
+
+            // Get width and height at this station
+            let halfWidth = getPlanformWidth(at: x, planform: planform)
+            let (zTop, zBottom) = getProfileHeight(at: x, profile: profile)
+
+            let height = max(0.1, zTop - zBottom)
+            let zCenter = (zTop + zBottom) / 2.0
+            let validHalfWidth = max(0.1, halfWidth)
+
+            // Scale unit cross-section to actual dimensions
+            var rib: [SCNVector3] = []
+            for unitPoint in unitShape {
+                let finalY = unitPoint.x * validHalfWidth
+                let finalZ = zCenter + (unitPoint.y * height / 2.0)
+
+                // Store in meters
+                let scaledPoint = SCNVector3(
+                    Float(x * metersPerUnit),
+                    Float(finalY * metersPerUnit),
+                    Float(finalZ * metersPerUnit)
+                )
+                rib.append(scaledPoint)
+            }
+            meshRibs.append(rib)
+        }
+
+        // 4. Calculate surface area between adjacent ribs with region classification
+        var noseCapArea: Double = 0.0
+        var leadingEdgeArea: Double = 0.0
+        var topSurfaceArea: Double = 0.0
+        var bottomSurfaceArea: Double = 0.0
+        var engineInletArea: Double = 0.0
+
+        // Get aircraft length for region boundaries
+        let minX = Double(meshRibs.first?.first?.x ?? 0.0)
+        let maxX = Double(meshRibs.last?.first?.x ?? Float(aircraftLengthMeters))
+        let lengthRange = maxX - minX
+
+        for i in 0..<meshRibs.count - 1 {
+            let (noseArea, leadingArea, topArea, bottomArea, inletArea) = calculateRibSegmentAreaByRegion(
+                rib1: meshRibs[i],
+                rib2: meshRibs[i + 1],
+                minX: Double(minX),
+                lengthRange: lengthRange
+            )
+            noseCapArea += noseArea
+            leadingEdgeArea += leadingArea
+            topSurfaceArea += topArea
+            bottomSurfaceArea += bottomArea
+            engineInletArea += inletArea
+        }
+
+        let totalArea = noseCapArea + leadingEdgeArea + topSurfaceArea + bottomSurfaceArea + engineInletArea
+
+        print("\n=== Surface Area Breakdown ===")
+        print("Nose cap (0-5%):      \(String(format: "%6.1f", noseCapArea)) m² @ 30 kg/m²")
+        print("Leading edges (5-20%):\(String(format: "%6.1f", leadingEdgeArea)) m² @ 30 kg/m²")
+        print("Top surface:          \(String(format: "%6.1f", topSurfaceArea)) m² @ 8 kg/m²")
+        print("Bottom surface:       \(String(format: "%6.1f", bottomSurfaceArea)) m² @ 12 kg/m²")
+        print("Engine inlet:         \(String(format: "%6.1f", engineInletArea)) m² @ 15 kg/m²")
+        print("------------------------------")
+        print("Total:                \(String(format: "%6.1f", totalArea)) m²")
+        print("==============================\n")
+
+        return SurfaceAreaBreakdown(
+            noseCap: noseCapArea,
+            leadingEdges: leadingEdgeArea,
+            topSurface: topSurfaceArea,
+            bottomSurface: bottomSurfaceArea,
+            engineInlet: engineInletArea,
+            total: totalArea
+        )
+    }
+
+    /// Calculate surface area for a rib segment, classified by region
+    /// Returns (noseCapArea, leadingEdgeArea, topArea, bottomArea, inletArea)
+    private static func calculateRibSegmentAreaByRegion(
+        rib1: [SCNVector3],
+        rib2: [SCNVector3],
+        minX: Double,
+        lengthRange: Double
+    ) -> (Double, Double, Double, Double, Double) {
+        guard rib1.count == rib2.count, rib1.count >= 2 else { return (0, 0, 0, 0, 0) }
+
+        var noseCapArea: Double = 0.0
+        var leadingEdgeArea: Double = 0.0
+        var topSurfaceArea: Double = 0.0
+        var bottomSurfaceArea: Double = 0.0
+        var engineInletArea: Double = 0.0
+
+        for j in 0..<rib1.count {
+            let k = (j + 1) % rib1.count
+
+            // Form quadrilateral between ribs, split into 2 triangles
+            let v0 = rib1[j]
+            let v1 = rib1[k]
+            let v2 = rib2[k]
+            let v3 = rib2[j]
+
+            // Process first triangle
+            let area1 = triangleArea(v0: v0, v1: v1, v2: v2)
+            let (region1, _) = classifyTriangle(v0: v0, v1: v1, v2: v2, minX: minX, lengthRange: lengthRange)
+            addAreaToRegion(area: area1, region: region1,
+                           noseCapArea: &noseCapArea, leadingEdgeArea: &leadingEdgeArea,
+                           topSurfaceArea: &topSurfaceArea, bottomSurfaceArea: &bottomSurfaceArea,
+                           engineInletArea: &engineInletArea)
+
+            // Process second triangle
+            let area2 = triangleArea(v0: v0, v1: v2, v2: v3)
+            let (region2, _) = classifyTriangle(v0: v0, v1: v2, v2: v3, minX: minX, lengthRange: lengthRange)
+            addAreaToRegion(area: area2, region: region2,
+                           noseCapArea: &noseCapArea, leadingEdgeArea: &leadingEdgeArea,
+                           topSurfaceArea: &topSurfaceArea, bottomSurfaceArea: &bottomSurfaceArea,
+                           engineInletArea: &engineInletArea)
+        }
+
+        return (noseCapArea, leadingEdgeArea, topSurfaceArea, bottomSurfaceArea, engineInletArea)
+    }
+
+    /// Classify a triangle into a region based on position and normal
+    private enum SurfaceRegion {
+        case noseCap
+        case leadingEdge
+        case topSurface
+        case bottomSurface
+        case engineInlet
+    }
+
+    private static func classifyTriangle(
+        v0: SCNVector3,
+        v1: SCNVector3,
+        v2: SCNVector3,
+        minX: Double,
+        lengthRange: Double
+    ) -> (SurfaceRegion, SCNVector3) {
+        // Calculate triangle centroid
+        let centroidX = (Double(v0.x) + Double(v1.x) + Double(v2.x)) / 3.0
+        let centroidY = (Double(v0.y) + Double(v1.y) + Double(v2.y)) / 3.0
+        let centroidZ = (Double(v0.z) + Double(v1.z) + Double(v2.z)) / 3.0
+
+        // Calculate normal vector (cross product)
+        let e1 = SCNVector3(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z)
+        let e2 = SCNVector3(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z)
+        let normal = SCNVector3(
+            e1.y * e2.z - e1.z * e2.y,
+            e1.z * e2.x - e1.x * e2.z,
+            e1.x * e2.y - e1.y * e2.x
+        )
+
+        // Normalize
+        let mag = sqrt(Double(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z))
+        let normalizedNormal = SCNVector3(
+            Float(Double(normal.x) / mag),
+            Float(Double(normal.y) / mag),
+            Float(Double(normal.z) / mag)
+        )
+
+        // Calculate position along length (0.0 = front, 1.0 = back)
+        let xPosition = (centroidX - minX) / lengthRange
+
+        // Region boundaries
+        let noseCapEnd = 0.05        // First 5% is nose cap
+        let leadingEdgeEnd = 0.20    // Next 15% (5-20%) is leading edge
+        let inletStart = 0.15        // Engine inlet starts at 15%
+        let inletEnd = 0.35          // Engine inlet ends at 35%
+
+        // Classify by position and orientation
+        if xPosition < noseCapEnd {
+            // Nose cap region (first 5%)
+            return (.noseCap, normalizedNormal)
+        } else if xPosition < leadingEdgeEnd {
+            // Leading edge region (5-20%)
+            // Only side-facing surfaces (significant Y component in normal)
+            if abs(Double(normalizedNormal.y)) > 0.3 {
+                return (.leadingEdge, normalizedNormal)
+            }
+            // Fall through to top/bottom classification
+        }
+
+        // Check for engine inlet (on bottom surface, 15-35% of length)
+        if xPosition >= inletStart && xPosition <= inletEnd && Double(normalizedNormal.z) < -0.3 {
+            return (.engineInlet, normalizedNormal)
+        }
+
+        // Classify remaining surfaces by orientation
+        if Double(normalizedNormal.z) > 0.0 {
+            // Normal points up - top surface
+            return (.topSurface, normalizedNormal)
+        } else {
+            // Normal points down - bottom surface
+            return (.bottomSurface, normalizedNormal)
+        }
+    }
+
+    private static func addAreaToRegion(
+        area: Double,
+        region: SurfaceRegion,
+        noseCapArea: inout Double,
+        leadingEdgeArea: inout Double,
+        topSurfaceArea: inout Double,
+        bottomSurfaceArea: inout Double,
+        engineInletArea: inout Double
+    ) {
+        switch region {
+        case .noseCap:
+            noseCapArea += area
+        case .leadingEdge:
+            leadingEdgeArea += area
+        case .topSurface:
+            topSurfaceArea += area
+        case .bottomSurface:
+            bottomSurfaceArea += area
+        case .engineInlet:
+            engineInletArea += area
+        }
+    }
+
+    private static func triangleArea(v0: SCNVector3, v1: SCNVector3, v2: SCNVector3) -> Double {
+        // Calculate triangle area using cross product
+        let e1 = SCNVector3(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z)
+        let e2 = SCNVector3(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z)
+
+        let cross = SCNVector3(
+            e1.y * e2.z - e1.z * e2.y,
+            e1.z * e2.x - e1.x * e2.z,
+            e1.x * e2.y - e1.y * e2.x
+        )
+
+        let magnitude = sqrt(Double(cross.x * cross.x + cross.y * cross.y + cross.z * cross.z))
+        return 0.5 * magnitude
+    }
+
     // MARK: - Geometry Helpers
     
     private static func calculateCrossSectionArea(section: [SCNVector3]) -> Double {

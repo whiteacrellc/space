@@ -586,8 +586,7 @@ class WireframeViewController: UIViewController {
         let dryMassKg = PhysicsConstants.calculateDryMass(
             volumeM3: volumeInMeters,
             waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 800.0 // Estimated
+            planeDesign: planeDesign
         )
 
         let fuelDensityKgPerLiter = 0.08  // From PhysicsConstants

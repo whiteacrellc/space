@@ -135,8 +135,7 @@ class OptimizationScene: SKScene {
         let dryWeight = PhysicsConstants.calculateDryMass(
             volumeM3: scaledVolume,
             waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 800.0
+            planeDesign: planeDesign
         )
 
         let iterationText = String(format: "Iteration %d: Length = %.2f m, Dry Weight = %.0f kg, Error = %+.0f kg",
@@ -208,8 +207,7 @@ class OptimizationScene: SKScene {
         let dryWeight = PhysicsConstants.calculateDryMass(
             volumeM3: scaledVolume,
             waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 800.0 // Estimated max temp
+            planeDesign: planeDesign
         )
 
         let dryWeightText = String(format: "Dry Weight: %.0f kg", dryWeight)
@@ -291,21 +289,25 @@ class OptimizationScene: SKScene {
             guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces),
                   !name.isEmpty else {
                 // Use default name if empty
+                let designName = GameManager.shared.currentSaveName ?? "Optimized Design"
                 LeaderboardManager.shared.addEntry(
                     playerName: "Anonymous",
                     volume: score.volume,
                     optimalLength: score.optimalLength,
-                    fuelCapacity: score.fuelCapacity
+                    fuelCapacity: score.fuelCapacity,
+                    designName: designName
                 )
                 self?.showContinueButton(yPosition: 0)
                 return
             }
 
+            let designName = GameManager.shared.currentSaveName ?? "Optimized Design"
             LeaderboardManager.shared.addEntry(
                 playerName: name,
                 volume: score.volume,
                 optimalLength: score.optimalLength,
-                fuelCapacity: score.fuelCapacity
+                fuelCapacity: score.fuelCapacity,
+                designName: designName
             )
 
             self?.showLeaderboardPosition(volume: score.volume, leftX: leftX, leftY: leftY)
@@ -315,11 +317,13 @@ class OptimizationScene: SKScene {
         viewController.present(alert, animated: true)
         #else
         // macOS version - just use default name
+        let designName = GameManager.shared.currentSaveName ?? "Optimized Design"
         LeaderboardManager.shared.addEntry(
             playerName: "Player",
             volume: score.volume,
             optimalLength: score.optimalLength,
-            fuelCapacity: score.fuelCapacity
+            fuelCapacity: score.fuelCapacity,
+            designName: designName
         )
         showContinueButton(yPosition: 0)
         #endif

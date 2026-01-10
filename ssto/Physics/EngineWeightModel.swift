@@ -188,55 +188,58 @@ struct EngineWeightModel {
 
     // MARK: - Helper Functions
 
-    /// Calculate structural weight (airframe without engines)
-    /// Based on volume and thermal protection requirements
-    /// - Parameters:
-    ///   - volumeM3: Internal volume in cubic meters
-    ///   - maxTemperature: Maximum temperature expected in Celsius
+    /// Calculate structural weight based on wetted surface area by region
+    /// Different kg/m² for different parts of the aircraft
+    /// - Parameter areaBreakdown: Surface area breakdown by region
     /// - Returns: Structural weight in kg
-    static func calculateStructuralWeight(volumeM3: Double, maxTemperature: Double) -> Double {
-        // Base structural weight: ~50 kg/m³ for lightweight composite structure
-        let baseWeight = volumeM3 * 50.0
+    static func calculateStructuralWeight(areaBreakdown: AircraftVolumeModel.SurfaceAreaBreakdown) -> Double {
+        let noseCapWeight = areaBreakdown.noseCap * 30.0        // 30 kg/m² for nose cap
+        let leadingEdgeWeight = areaBreakdown.leadingEdges * 30.0  // 30 kg/m² for leading edges
+        let topSurfaceWeight = areaBreakdown.topSurface * 8.0    // 8 kg/m² for top surface
+        let bottomSurfaceWeight = areaBreakdown.bottomSurface * 12.0  // 12 kg/m² for bottom
+        let engineInletWeight = areaBreakdown.engineInlet * 15.0  // 15 kg/m² for inlet
 
-        // Add thermal protection weight for high temperatures
-        let thermalProtectionWeight: Double
-        if maxTemperature <= 600 {
-            thermalProtectionWeight = 0.0
-        } else {
-            // Additional thermal protection: 10 kg/m³ per 100°C over 600°C
-            let tempExcess = maxTemperature - 600.0
-            let protectionFactor = tempExcess / 100.0
-            thermalProtectionWeight = volumeM3 * 10.0 * protectionFactor
-        }
+        let totalStructuralWeight = noseCapWeight + leadingEdgeWeight + topSurfaceWeight +
+                                    bottomSurfaceWeight + engineInletWeight
 
-        return baseWeight + thermalProtectionWeight
+        print("\n=== Structural Weight Breakdown ===")
+        print("Nose cap:             \(String(format: "%6.0f", noseCapWeight)) kg")
+        print("Leading edges:        \(String(format: "%6.0f", leadingEdgeWeight)) kg")
+        print("Top surface:          \(String(format: "%6.0f", topSurfaceWeight)) kg")
+        print("Bottom surface:       \(String(format: "%6.0f", bottomSurfaceWeight)) kg")
+        print("Engine inlet:         \(String(format: "%6.0f", engineInletWeight)) kg")
+        print("-----------------------------------")
+        print("Total structural:     \(String(format: "%6.0f", totalStructuralWeight)) kg")
+        print("===================================\n")
+
+        return totalStructuralWeight
     }
 
     /// Calculate total dry mass including structure, engines, and cargo
     /// - Parameters:
-    ///   - volumeM3: Internal volume in cubic meters
-    ///   - maxTemperature: Maximum expected temperature in Celsius
+    ///   - areaBreakdown: Surface area breakdown by region
+    ///   - volumeM3: Internal volume in cubic meters (for fuel capacity estimation)
     ///   - waypoints: Flight plan waypoints
     ///   - planeDesign: Aircraft design parameters
     /// - Returns: Total dry mass in kg (structure + engines + cargo)
     static func calculateDryMass(
+        areaBreakdown: AircraftVolumeModel.SurfaceAreaBreakdown,
         volumeM3: Double,
-        maxTemperature: Double,
         waypoints: [Waypoint],
         planeDesign: PlaneDesign
     ) -> Double {
 
-        // Start with structural weight
-        let structuralWeight = calculateStructuralWeight(volumeM3: volumeM3, maxTemperature: maxTemperature)
+        // Calculate structural weight from surface area breakdown
+        let structuralWeight = calculateStructuralWeight(areaBreakdown: areaBreakdown)
 
-        // Add fixed cargo weight
+        // Fixed cargo weight
         let cargoWeight = PhysicsConstants.cargoMass
 
         // Estimate total mass for thrust calculation (structure + cargo + 50% fuel load)
         let fuelCapacity = volumeM3 * 1000.0 * 0.086 // kg
         let estimatedMass = structuralWeight + cargoWeight + (fuelCapacity * 0.5)
 
-        // Calculate engine weight
+        // Calculate engine weight based on thrust requirements
         let engineWeight = calculateTotalEngineWeight(
             waypoints: waypoints,
             estimatedMass: estimatedMass,

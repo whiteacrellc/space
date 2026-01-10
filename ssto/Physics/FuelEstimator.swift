@@ -171,8 +171,7 @@ class FuelEstimator {
         let dryMassGuess = PhysicsConstants.calculateDryMass(
             volumeM3: volumeGuess,
             waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 800.0
+            planeDesign: planeDesign
         )
 
         // Estimate fuel using FuelEstimator (uses actual PropulsionManager!)

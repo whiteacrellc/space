@@ -1,4 +1,5 @@
 import UIKit
+import SpriteKit
 
 class TopViewShapeView: UIView {
     var noseTipModel = CGPoint.zero  // Fixed at (0, 0) in model space (centerline y=0)
@@ -211,6 +212,9 @@ class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
     private let wingAreaLabel = UILabel()
     private var aircraftLength: CGFloat = 70.0  // meters
 
+    // Flight Plan button (conditionally visible)
+    private var flightPlanButton: UIButton?
+
     // Canvas dimensions
     private let canvasWidth: CGFloat = 800
     private let canvasHeight: CGFloat = 400
@@ -255,6 +259,22 @@ class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
         doneButtonConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
         let doneButton = UIButton(configuration: doneButtonConfig, primaryAction: UIAction(handler: { _ in self.doneButtonTapped() }))
         headerView.addSubview(doneButton)
+
+        // Flight Plan button (conditionally visible)
+        var flightPlanButtonConfig = UIButton.Configuration.plain()
+        flightPlanButtonConfig.title = "Flight Plan"
+        flightPlanButtonConfig.baseForegroundColor = .systemYellow
+        flightPlanButtonConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = UIFont.systemFont(ofSize: 18, weight: .medium)
+            return outgoing
+        }
+        flightPlanButtonConfig.background.backgroundColor = UIColor.white.withAlphaComponent(0.1)
+        flightPlanButtonConfig.background.cornerRadius = 8
+        flightPlanButtonConfig.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
+        let flightPlanBtn = UIButton(configuration: flightPlanButtonConfig, primaryAction: UIAction(handler: { _ in self.flightPlanButtonTapped() }))
+        headerView.addSubview(flightPlanBtn)
+        self.flightPlanButton = flightPlanBtn
 
         // Title label
         let titleLabel = UILabel()
@@ -305,6 +325,7 @@ class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
         // Layout
         headerView.translatesAutoresizingMaskIntoConstraints = false
         doneButton.translatesAutoresizingMaskIntoConstraints = false
+        flightPlanBtn.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         sideViewButton.translatesAutoresizingMaskIntoConstraints = false
         lengthLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -320,8 +341,11 @@ class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
             doneButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
             doneButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
 
-            // Length controls in upper left (after done button)
-            lengthLabel.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 30),
+            flightPlanBtn.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 15),
+            flightPlanBtn.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+
+            // Length controls in upper left (after flight plan button)
+            lengthLabel.leadingAnchor.constraint(equalTo: flightPlanBtn.trailingAnchor, constant: 30),
             lengthLabel.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 8),
 
             lengthTextField.leadingAnchor.constraint(equalTo: lengthLabel.trailingAnchor, constant: 5),
@@ -337,6 +361,9 @@ class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
             sideViewButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -20),
             sideViewButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor)
         ])
+
+        // Set initial visibility based on whether a file is loaded
+        updateFlightPlanButtonVisibility()
     }
 
     private func setupFooter() {
@@ -657,5 +684,46 @@ class TopViewDesignViewController: UIViewController, UITextFieldDelegate {
         let sideViewController = SSTODesignViewController()
         sideViewController.modalPresentationStyle = .fullScreen
         present(sideViewController, animated: true, completion: nil)
+    }
+
+    @objc private func flightPlanButtonTapped() {
+        // Save the current design to GameManager before transitioning
+        let planform = TopViewPlanform(
+            noseTip: SerializablePoint(from: shapeView.noseTipModel, isFixedX: true),
+            frontControlLeft: SerializablePoint(from: shapeView.frontControlLeftModel, isFixedX: false),
+            midLeft: SerializablePoint(from: shapeView.midLeftModel, isFixedX: false),
+            rearControlLeft: SerializablePoint(from: shapeView.rearControlLeftModel, isFixedX: false),
+            tailLeft: SerializablePoint(from: shapeView.tailLeftModel, isFixedX: false),
+            wingStartPosition: Double(shapeView.wingStartPosition),
+            wingSpan: Double(shapeView.wingSpan),
+            aircraftLength: Double(aircraftLength)
+        )
+        GameManager.shared.setTopViewPlanform(planform)
+
+        openFlightPlanningScene()
+    }
+
+    private func openFlightPlanningScene() {
+        guard let presentingVC = presentingViewController else { return }
+
+        dismiss(animated: true) {
+            guard let skView = presentingVC.view as? SKView,
+                  let currentScene = skView.scene else { return }
+
+            let transition = SKTransition.fade(withDuration: 0.5)
+            let flightPlanningScene = FlightPlanningScene(size: currentScene.size)
+            flightPlanningScene.scaleMode = .aspectFill
+            skView.presentScene(flightPlanningScene, transition: transition)
+        }
+    }
+
+    private func updateFlightPlanButtonVisibility() {
+        let isFileLoaded = GameManager.shared.currentSaveName != nil
+        flightPlanButton?.isHidden = !isFileLoaded
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateFlightPlanButtonVisibility()
     }
 }

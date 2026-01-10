@@ -971,6 +971,9 @@ class FlightPlanningScene: SKScene {
         // Save the entire game state (aircraft design + flight plan)
         if GameManager.shared.saveDesign(name: name) {
             showSaveAlert(title: "Success", message: "Game saved as '\(name)'")
+
+            // Check if design would make top 10 and add to leaderboard
+            checkAndAddToLeaderboard(designName: name)
         } else {
             showSaveAlert(title: "Error", message: "Failed to save game")
         }
@@ -980,6 +983,83 @@ class FlightPlanningScene: SKScene {
         guard let viewController = view?.window?.rootViewController else { return }
 
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        viewController.present(alert, animated: true)
+    }
+
+    private func checkAndAddToLeaderboard(designName: String) {
+        // Calculate volume for the saved design
+        let volume = AircraftVolumeModel.calculateInternalVolume()
+
+        // Check if would make top 10
+        if LeaderboardManager.shared.wouldMakeTopTen(volume: volume) {
+            // Get optimal length from planform
+            let planform = GameManager.shared.getTopViewPlanform()
+            let optimalLength = planform.aircraftLength
+
+            // Calculate fuel capacity
+            let fuelCapacity = volume * 1000.0 * PhysicsConstants.kgPerLiter
+
+            // Show prompt for player name
+            promptForLeaderboardName(
+                designName: designName,
+                volume: volume,
+                optimalLength: optimalLength,
+                fuelCapacity: fuelCapacity
+            )
+        }
+    }
+
+    private func promptForLeaderboardName(
+        designName: String,
+        volume: Double,
+        optimalLength: Double,
+        fuelCapacity: Double
+    ) {
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        let alert = UIAlertController(
+            title: "🏆 Top 10 Achievement!",
+            message: "Your design would make the top 10! Enter your name for the leaderboard:",
+            preferredStyle: .alert
+        )
+
+        alert.addTextField { textField in
+            textField.placeholder = "Player Name"
+            textField.autocapitalizationType = .words
+            textField.returnKeyType = .done
+        }
+
+        alert.addAction(UIAlertAction(title: "Submit", style: .default) { [weak self] _ in
+            let playerName = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces) ?? "Player"
+
+            LeaderboardManager.shared.addEntry(
+                playerName: playerName,
+                volume: volume,
+                optimalLength: optimalLength,
+                fuelCapacity: fuelCapacity,
+                designName: designName
+            )
+
+            // Show confirmation
+            self?.showLeaderboardConfirmation(rank: LeaderboardManager.shared.getRank(volume: volume))
+        })
+
+        alert.addAction(UIAlertAction(title: "Skip", style: .cancel))
+
+        viewController.present(alert, animated: true)
+    }
+
+    private func showLeaderboardConfirmation(rank: Int?) {
+        guard let rank = rank else { return }
+        guard let viewController = view?.window?.rootViewController else { return }
+
+        let alert = UIAlertController(
+            title: "✓ Added to Leaderboard",
+            message: "Your rank: #\(rank)",
+            preferredStyle: .alert
+        )
+
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         viewController.present(alert, animated: true)
     }

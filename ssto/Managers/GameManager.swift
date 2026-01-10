@@ -143,6 +143,7 @@ struct LeaderboardEntry: Codable, Identifiable, Comparable {
     var optimalLength: Double  // meters
     var fuelCapacity: Double   // kg
     var date: Date
+    var designName: String?    // Link to saved design file (optional for backward compatibility)
 
     /// Compare entries (lower volume is better)
     static func < (lhs: LeaderboardEntry, rhs: LeaderboardEntry) -> Bool {

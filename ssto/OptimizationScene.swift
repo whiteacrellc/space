@@ -11,9 +11,9 @@ class OptimizationScene: SKScene {
 
     // UI Elements
     private var titleLabel: SKLabelNode?
-    private var iterationLabels: [SKLabelNode] = []
     private var resultLabel: SKLabelNode?
     private var continueButton: SKLabelNode?
+    private var iterationsScrollView: UIScrollView?
 
     // Optimization data
     private var currentIteration: Int = 0
@@ -27,23 +27,49 @@ class OptimizationScene: SKScene {
     }
 
     private func setupUI() {
-        // Title
-        titleLabel = SKLabelNode(text: "Aircraft Optimization")
+        // Title (left-aligned above scroll view)
+        titleLabel = SKLabelNode(text: "Finding Optimal Weight")
         titleLabel?.fontName = "AvenirNext-Bold"
-        titleLabel?.fontSize = 24
+        titleLabel?.fontSize = 20
         titleLabel?.fontColor = .white
-        titleLabel?.position = CGPoint(x: size.width / 2, y: size.height - 40)
+        titleLabel?.position = CGPoint(x: size.width * 0.5, y: size.height - 30)
+        titleLabel?.horizontalAlignmentMode = .center
         if let label = titleLabel {
             addChild(label)
         }
 
-        // Subtitle
-        let subtitle = SKLabelNode(text: "Newton-Raphson Method: Finding Optimal Length")
+        // Subtitle (smaller, left side)
+        let subtitle = SKLabelNode(text: "Newton-Raphson Optimal Weight")
         subtitle.fontName = "AvenirNext-Regular"
         subtitle.fontSize = 16
         subtitle.fontColor = .cyan
-        subtitle.position = CGPoint(x: size.width / 2, y: size.height - 70)
+        subtitle.position = CGPoint(x: size.width * 0.25, y: size.height - 50)
+        subtitle.horizontalAlignmentMode = .center
         addChild(subtitle)
+
+        // Create scrollable iterations container (left side)
+        setupIterationsScrollView()
+    }
+
+    private func setupIterationsScrollView() {
+        guard let view = view else { return }
+
+        let scrollView = UIScrollView()
+        scrollView.frame = CGRect(
+            x: 20,
+            y: view.bounds.height * 0.0 + 70,  // Bottom at 50% of screen (inverted Y)
+            width: view.bounds.width * 0.5 - 30,
+            height: view.bounds.height * 0.5
+        )
+        scrollView.backgroundColor = UIColor(white: 0.1, alpha: 0.8)
+        scrollView.layer.cornerRadius = 10
+        scrollView.layer.borderColor = UIColor.cyan.withAlphaComponent(0.5).cgColor
+        scrollView.layer.borderWidth = 2
+        scrollView.isUserInteractionEnabled = true
+        scrollView.showsVerticalScrollIndicator = true
+
+        view.addSubview(scrollView)
+        iterationsScrollView = scrollView
     }
 
     private func startOptimization() {
@@ -59,7 +85,6 @@ class OptimizationScene: SKScene {
     }
 
     private func displayIterations(result: NewtonModule.OptimizationResult) {
-        let startY = size.height - 120
         let lineHeight: CGFloat = 25
 
         // Display iterations one by one with animation
@@ -75,10 +100,18 @@ class OptimizationScene: SKScene {
                 self.displayIteration(
                     iteration: self.currentIteration,
                     length: result.lengthHistory[self.currentIteration],
-                    error: result.errorHistory[min(self.currentIteration, result.errorHistory.count - 1)],
-                    yPosition: startY - CGFloat(self.currentIteration) * lineHeight
+                    error: result.errorHistory[min(self.currentIteration, result.errorHistory.count - 1)]
                 )
                 self.currentIteration += 1
+
+                // Update scroll view content size
+                if let scrollView = self.iterationsScrollView {
+                    let contentHeight = CGFloat(self.currentIteration) * lineHeight + 20
+                    scrollView.contentSize = CGSize(width: scrollView.frame.width, height: contentHeight)
+                    // Auto-scroll to bottom
+                    let bottomOffset = CGPoint(x: 0, y: max(0, contentHeight - scrollView.bounds.height))
+                    scrollView.setContentOffset(bottomOffset, animated: true)
+                }
             } else {
                 timer.invalidate()
                 self.displayFinalResult(result: result)
@@ -86,7 +119,9 @@ class OptimizationScene: SKScene {
         }
     }
 
-    private func displayIteration(iteration: Int, length: Double, error: Double, yPosition: CGFloat) {
+    private func displayIteration(iteration: Int, length: Double, error: Double) {
+        guard let scrollView = iterationsScrollView else { return }
+
         // Calculate dry weight for this iteration's length to show context
         let planform = GameManager.shared.getTopViewPlanform()
         let originalLength = planform.aircraftLength
@@ -107,23 +142,30 @@ class OptimizationScene: SKScene {
         let iterationText = String(format: "Iteration %d: Length = %.2f m, Dry Weight = %.0f kg, Error = %+.0f kg",
                                    iteration + 1, length, dryWeight, error)
 
-        let label = SKLabelNode(text: iterationText)
-        label.fontName = "Menlo-Regular"
-        label.fontSize = 14
-        label.fontColor = .white
-        label.position = CGPoint(x: size.width / 2, y: yPosition)
-        label.horizontalAlignmentMode = .center
+        // Create UILabel for scroll view
+        let label = UILabel()
+        label.text = iterationText
+        label.font = UIFont(name: "Menlo-Regular", size: 12)
+        label.textColor = .white
+        label.textAlignment = .left
+
+        let lineHeight: CGFloat = 25
+        let yPosition = CGFloat(iteration) * lineHeight + 10
+        label.frame = CGRect(x: 10, y: yPosition, width: scrollView.frame.width - 20, height: lineHeight)
 
         // Fade in animation
         label.alpha = 0
-        label.run(SKAction.fadeIn(withDuration: 0.3))
+        UIView.animate(withDuration: 0.3) {
+            label.alpha = 1
+        }
 
-        addChild(label)
-        iterationLabels.append(label)
+        scrollView.addSubview(label)
     }
 
     private func displayFinalResult(result: NewtonModule.OptimizationResult) {
-        let yPosition = size.height - 120 - CGFloat(result.iterations) * 25 - 50
+        // Right side layout - center of right 50%
+        let rightX = size.width * 0.75
+        let rightStartY = size.height - 150
 
         // Convergence status
         let statusText = result.converged ? "✓ CONVERGED" : "⚠️ MAX ITERATIONS REACHED"
@@ -131,7 +173,7 @@ class OptimizationScene: SKScene {
         statusLabel.fontName = "AvenirNext-Bold"
         statusLabel.fontSize = 20
         statusLabel.fontColor = result.converged ? .green : .yellow
-        statusLabel.position = CGPoint(x: size.width / 2, y: yPosition)
+        statusLabel.position = CGPoint(x: rightX, y: rightStartY)
         addChild(statusLabel)
 
         // Optimal length
@@ -140,7 +182,7 @@ class OptimizationScene: SKScene {
         lengthLabel.fontName = "AvenirNext-Medium"
         lengthLabel.fontSize = 18
         lengthLabel.fontColor = .cyan
-        lengthLabel.position = CGPoint(x: size.width / 2, y: yPosition - 30)
+        lengthLabel.position = CGPoint(x: rightX, y: rightStartY - 35)
         addChild(lengthLabel)
 
         // Fuel capacity
@@ -149,7 +191,7 @@ class OptimizationScene: SKScene {
         capacityLabel.fontName = "AvenirNext-Medium"
         capacityLabel.fontSize = 18
         capacityLabel.fontColor = .white
-        capacityLabel.position = CGPoint(x: size.width / 2, y: yPosition - 55)
+        capacityLabel.position = CGPoint(x: rightX, y: rightStartY - 70)
         addChild(capacityLabel)
 
         // Dry weight (aircraft weight without fuel) - calculated dynamically
@@ -170,12 +212,12 @@ class OptimizationScene: SKScene {
             maxTemperature: 800.0 // Estimated max temp
         )
 
-        let dryWeightText = String(format: "Dry Weight: %.0f kg (Optimized)", dryWeight)
+        let dryWeightText = String(format: "Dry Weight: %.0f kg", dryWeight)
         let dryWeightLabel = SKLabelNode(text: dryWeightText)
         dryWeightLabel.fontName = "AvenirNext-Bold"
         dryWeightLabel.fontSize = 20
         dryWeightLabel.fontColor = .yellow
-        dryWeightLabel.position = CGPoint(x: size.width / 2, y: yPosition - 90)
+        dryWeightLabel.position = CGPoint(x: rightX, y: rightStartY - 105)
         addChild(dryWeightLabel)
 
         // Check if in top 10 and handle leaderboard
@@ -198,12 +240,15 @@ class OptimizationScene: SKScene {
             )
 
             if LeaderboardManager.shared.wouldMakeTopTen(volume: scaledVolume) {
-                // Show "New High Score!" message
+                // Show "New High Score!" message - positioned below scroll view on left side
+                let leftX = size.width * 0.25
+                let leftY = size.height * 0.2
+
                 let highScoreLabel = SKLabelNode(text: "🏆 NEW TOP 10 SCORE! 🏆")
                 highScoreLabel.fontName = "AvenirNext-Bold"
                 highScoreLabel.fontSize = 22
                 highScoreLabel.fontColor = .yellow
-                highScoreLabel.position = CGPoint(x: size.width / 2, y: yPosition - 130)
+                highScoreLabel.position = CGPoint(x: leftX, y: leftY)
                 addChild(highScoreLabel)
 
                 // Pulse animation
@@ -214,19 +259,19 @@ class OptimizationScene: SKScene {
 
                 // Prompt for name
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                    self?.promptForName(score: score)
+                    self?.promptForName(score: score, leftX: leftX, leftY: leftY)
                 }
             } else {
                 // Not in top 10, just show continue button
-                showContinueButton(yPosition: yPosition - 130)
+                showContinueButton(yPosition: 0)
             }
         } else {
             // Failed to converge, show continue button
-            showContinueButton(yPosition: yPosition - 90)
+            showContinueButton(yPosition: 0)
         }
     }
 
-    private func promptForName(score: LeaderboardEntry) {
+    private func promptForName(score: LeaderboardEntry, leftX: CGFloat, leftY: CGFloat) {
         #if os(iOS)
         guard let viewController = view?.window?.rootViewController else { return }
 
@@ -252,7 +297,7 @@ class OptimizationScene: SKScene {
                     optimalLength: score.optimalLength,
                     fuelCapacity: score.fuelCapacity
                 )
-                self?.showContinueButton(yPosition: self?.size.height ?? 0 / 2 - 100)
+                self?.showContinueButton(yPosition: 0)
                 return
             }
 
@@ -263,8 +308,8 @@ class OptimizationScene: SKScene {
                 fuelCapacity: score.fuelCapacity
             )
 
-            self?.showLeaderboardPosition(volume: score.volume)
-            self?.showContinueButton(yPosition: self?.size.height ?? 0 / 2 - 150)
+            self?.showLeaderboardPosition(volume: score.volume, leftX: leftX, leftY: leftY)
+            self?.showContinueButton(yPosition: 0)
         })
 
         viewController.present(alert, animated: true)
@@ -276,46 +321,49 @@ class OptimizationScene: SKScene {
             optimalLength: score.optimalLength,
             fuelCapacity: score.fuelCapacity
         )
-        showContinueButton(yPosition: size.height / 2 - 100)
+        showContinueButton(yPosition: 0)
         #endif
     }
 
-    private func showLeaderboardPosition(volume: Double) {
+    private func showLeaderboardPosition(volume: Double, leftX: CGFloat, leftY: CGFloat) {
         if let rank = LeaderboardManager.shared.getRank(volume: volume) {
             let positionText = "Your Rank: #\(rank)"
             let positionLabel = SKLabelNode(text: positionText)
             positionLabel.fontName = "AvenirNext-Bold"
             positionLabel.fontSize = 20
             positionLabel.fontColor = .green
-            positionLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 120)
+            positionLabel.position = CGPoint(x: leftX, y: leftY - 40)
             addChild(positionLabel)
         }
     }
 
     private func showContinueButton(yPosition: CGFloat) {
-        // Position button on middle right of scene
-        let xPosition = size.width - 180
-        let yPosition = size.height / 2
+        // Position button in upper right corner
+        let xPosition = size.width - 100
+        let yPosition = size.height - 60
         continueButton = createButton(
-            text: "Continue to Simulation",
+            text: "Continue →",
             position: CGPoint(x: xPosition, y: yPosition),
-            name: "continue"
+            name: "continue",
+            width: 180,
+            height: 35,
+            fontSize: 16
         )
         if let button = continueButton {
             addChild(button)
         }
     }
 
-    private func createButton(text: String, position: CGPoint, name: String) -> SKLabelNode {
+    private func createButton(text: String, position: CGPoint, name: String, width: CGFloat = 250, height: CGFloat = 40, fontSize: CGFloat = 20) -> SKLabelNode {
         let button = SKLabelNode(text: text)
         button.fontName = "AvenirNext-Medium"
-        button.fontSize = 20
+        button.fontSize = fontSize
         button.fontColor = .white
         button.position = position
         button.name = name
         button.verticalAlignmentMode = .center
 
-        let background = SKShapeNode(rectOf: CGSize(width: 250, height: 40), cornerRadius: 8)
+        let background = SKShapeNode(rectOf: CGSize(width: width, height: height), cornerRadius: 8)
         background.fillColor = UIColor(white: 0.2, alpha: 0.6)
         background.strokeColor = .white
         background.lineWidth = 2
@@ -337,6 +385,9 @@ class OptimizationScene: SKScene {
                     NewtonModule.applyOptimizedLength(result: result)
                 }
 
+                // Clean up scroll view before transitioning
+                cleanupScrollView()
+
                 // Transition to simulation scene
                 let transition = SKTransition.fade(withDuration: 0.5)
                 let simulationScene = SimulationScene(size: size)
@@ -346,7 +397,13 @@ class OptimizationScene: SKScene {
         }
     }
 
+    private func cleanupScrollView() {
+        iterationsScrollView?.removeFromSuperview()
+        iterationsScrollView = nil
+    }
+
     deinit {
         displayTimer?.invalidate()
+        cleanupScrollView()
     }
 }

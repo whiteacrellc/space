@@ -153,7 +153,7 @@ class SimulationScene: SKScene {
 
     private func runPhysicsSimulation() -> MissionResult {
         let planeDesign = GameManager.shared.getPlaneDesign()
-        let propulsionSystem = JetEngine() // Default propulsion system for air-breathing engines
+        let propulsionSystem = EjectorRamjetEngine() // Default propulsion system for air-breathing engines
 
         // Calculate initial mass - now dynamic based on flight plan
         let internalVolumeM3 = AircraftVolumeModel.calculateInternalVolume()
@@ -167,12 +167,12 @@ class SimulationScene: SKScene {
             maxTemperature: 800.0 // Estimated - will be updated after simulation
         )
 
-        var currentMass = dryMass + (fuelVolumeLiters * 0.086) // kg (slush hydrogen density)
+        var currentMass = dryMass + (fuelVolumeLiters * PhysicsConstants.kgPerLiter) // kg (slush hydrogen density)
 
         print("Dynamic dry mass calculation:")
         print("  - Volume: \(String(format: "%.1f", internalVolumeM3)) m³")
         print("  - Calculated dry mass: \(String(format: "%.0f", dryMass)) kg")
-        print("  - Fuel capacity: \(String(format: "%.0f", fuelVolumeLiters * 0.086)) kg")
+        print("  - Fuel capacity: \(String(format: "%.0f", fuelVolumeLiters * PhysicsConstants.kgPerLiter)) kg")
         print("  - Total mass: \(String(format: "%.0f", currentMass)) kg")
 
         var segments: [FlightSegmentResult] = []
@@ -198,7 +198,7 @@ class SimulationScene: SKScene {
             var fuelConsumed = 0.0
 
             switch engineMode {
-            case .jet:
+            case .ejectorRamjet:
                 let result = JetModule.analyzeSegment(
                     startWaypoint: current,
                     endWaypoint: next,
@@ -303,7 +303,7 @@ class SimulationScene: SKScene {
                 altitude: point.altitude,
                 speed: point.speed,
                 fuelRemaining: 0.0, // Not tracked in module results
-                engineMode: .jet,
+                engineMode: .ejectorRamjet,
                 temperature: point.temp
             )
         }
@@ -313,7 +313,7 @@ class SimulationScene: SKScene {
             finalAltitude: result.endAltitude,
             finalSpeed: result.endSpeed,
             duration: result.timeElapsed,
-            engineUsed: .jet
+            engineUsed: .ejectorRamjet
         )
     }
 
@@ -399,8 +399,8 @@ class SimulationScene: SKScene {
             return .ramjet
         }
 
-        // Jet for subsonic/low supersonic
-        return .jet
+        // Ejector-Ramjet for subsonic/low supersonic
+        return .ejectorRamjet
     }
 
     private func calculateScore(fuel: Double, time: Double, success: Bool, maxTemp: Double, tempLimit: Double) -> Int {
@@ -621,7 +621,7 @@ class SimulationScene: SKScene {
 
         // Calculate additional stats
         let internalVolumeM3 = AircraftVolumeModel.calculateInternalVolume()
-        let fuelCapacityKg = internalVolumeM3 * 1000.0 * 0.086
+        let fuelCapacityKg = internalVolumeM3 * 1000.0 * PhysicsConstants.kgPerLiter
 
         // Create result labels
         let resultData: [(String, UIColor)] = [
@@ -702,7 +702,7 @@ class SimulationScene: SKScene {
 
         // Calculate internal volume and fuel capacity
         let internalVolumeM3 = AircraftVolumeModel.calculateInternalVolume()
-        let fuelCapacityKg = internalVolumeM3 * 1000.0 * 0.086 // Slush hydrogen density
+        let fuelCapacityKg = internalVolumeM3 * 1000.0 * PhysicsConstants.kgPerLiter // Slush hydrogen density
 
         LeaderboardManager.shared.addEntry(
             playerName: playerName.isEmpty ? "Player" : playerName,

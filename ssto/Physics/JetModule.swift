@@ -328,8 +328,8 @@ class JetModule {
             let current = waypoints[i]
             let next = waypoints[i + 1]
 
-            // Check if this is a jet segment
-            if next.engineMode == .jet || current.engineMode == .jet {
+            // Check if this is an ejector-ramjet segment
+            if next.engineMode == .ejectorRamjet || current.engineMode == .ejectorRamjet {
                 let result = analyzeSegment(
                     startWaypoint: current,
                     endWaypoint: next,

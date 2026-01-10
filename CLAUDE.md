@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an iOS SpriteKit/SceneKit game simulating a Single-Stage-To-Orbit (SSTO) aircraft. Players design a lifting-body aircraft, create a flight plan with waypoints, and simulate ascent to orbit while managing propulsion systems (jet, ramjet, scramjet, rocket) and thermal limits. The goal of the game is to create an aircrate that can get to orbit with the lowest dry weight. 
+This is an iOS SpriteKit/SceneKit game simulating a Single-Stage-To-Orbit (SSTO) aircraft. Players design a lifting-body aircraft, create a flight plan with waypoints, and simulate ascent to orbit while managing propulsion systems (ramjet/ejector, ramjet, scramjet, rocket) and thermal limits. The goal of the game is to create an aircrate that can get to orbit with the lowest dry weight. 
 
 ## Build Commands
 

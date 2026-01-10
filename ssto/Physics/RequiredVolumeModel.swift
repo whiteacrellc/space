@@ -2,11 +2,16 @@
 //  RequiredVolumeModel.swift
 //  ssto
 //
-//  Calculates required internal volume based on mission requirements
+//  DEPRECATED: Use FuelEstimator.calculateRequiredVolume() instead
+//  This file is kept for backward compatibility only
+//  FuelEstimator provides the same functionality with actual PropulsionManager data
 //
 
 import Foundation
 
+/// DEPRECATED: Use FuelEstimator instead
+/// FuelEstimator.calculateRequiredVolume() provides the same functionality with accurate PropulsionManager data
+@available(*, deprecated, message: "Use FuelEstimator.calculateRequiredVolume() instead")
 struct RequiredVolumeModel {
 
     // MARK: - Fixed Volume Requirements
@@ -43,10 +48,12 @@ struct RequiredVolumeModel {
     // MARK: - Volume Calculation
 
     /// Calculate total required volume for a flight plan
+    /// DEPRECATED: Use FuelEstimator.calculateRequiredVolume() instead
     /// - Parameters:
     ///   - flightPlan: Flight plan with waypoints
     ///   - planeDesign: Aircraft design parameters
     /// - Returns: Required internal volume in m³
+    @available(*, deprecated, message: "Use FuelEstimator.calculateRequiredVolume() instead")
     static func calculateRequiredVolume(
         flightPlan: FlightPlan,
         planeDesign: PlaneDesign
@@ -128,7 +135,7 @@ struct RequiredVolumeModel {
             let end = flightPlan.waypoints[i + 1]
 
             let engineMode = end.engineMode != .auto ? end.engineMode :
-                determineAutoEngineMode(altitude: end.altitude * PhysicsConstants.feetToMeters, speed: end.speed)
+                PropulsionManager.selectEngineMode(altitude: end.altitude, speed: end.speed)
 
             let segmentFuel = estimateSegmentFuel(
                 start: start,
@@ -168,12 +175,12 @@ struct RequiredVolumeModel {
 
         // Determine engine mode
         let engineMode = end.engineMode != .auto ? end.engineMode :
-            determineAutoEngineMode(altitude: end.altitude * PhysicsConstants.feetToMeters, speed: end.speed)
+            PropulsionManager.selectEngineMode(altitude: end.altitude, speed: end.speed)
 
         // Rough fuel estimate based on engine mode and delta-V
         let specificImpulse: Double
         switch engineMode {
-        case .jet:
+        case .ejectorRamjet:
             specificImpulse = 3000.0 // sec
         case .ramjet:
             specificImpulse = 4000.0 // sec
@@ -200,18 +207,5 @@ struct RequiredVolumeModel {
         let fuelMass = currentMass * massRatio * 1.5 // Add 50% margin for drag losses
 
         return max(0.0, fuelMass)
-    }
-
-    /// Determine engine mode based on altitude and speed
-    private static func determineAutoEngineMode(altitude: Double, speed: Double) -> EngineMode {
-        if altitude > ScramjetModule.minAltitude && speed >= ScramjetModule.minSpeed {
-            return .scramjet
-        } else if altitude > RamjetModule.minAltitude && altitude <= RamjetModule.maxAltitude && speed >= 2.0 {
-            return .ramjet
-        } else if altitude <= JetModule.maxAltitude {
-            return .jet
-        } else {
-            return .rocket
-        }
     }
 }

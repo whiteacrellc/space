@@ -123,11 +123,11 @@ struct EngineWeightModel {
 
             // Determine which engine mode and track peak thrust
             let engineMode = waypoint.engineMode == .auto ?
-                determineAutoEngineMode(altitude: altitude, speed: speed) :
+                PropulsionManager.selectEngineMode(altitude: waypoint.altitude, speed: speed) :
                 waypoint.engineMode
 
             switch engineMode {
-            case .jet:
+            case .ejectorRamjet:
                 maxJetThrust = max(maxJetThrust, thrust)
             case .ramjet:
                 maxRamjetThrust = max(maxRamjetThrust, thrust)
@@ -187,20 +187,6 @@ struct EngineWeightModel {
     }
 
     // MARK: - Helper Functions
-
-    /// Determine engine mode based on altitude and speed (auto mode logic)
-    private static func determineAutoEngineMode(altitude: Double, speed: Double) -> EngineMode {
-        // Match logic from PropulsionManager
-        if altitude > ScramjetModule.minAltitude && speed >= ScramjetModule.minSpeed {
-            return .scramjet
-        } else if altitude > RamjetModule.minAltitude && altitude <= RamjetModule.maxAltitude && speed >= 2.0 {
-            return .ramjet
-        } else if altitude <= JetModule.maxAltitude {
-            return .jet
-        } else {
-            return .rocket
-        }
-    }
 
     /// Calculate structural weight (airframe without engines)
     /// Based on volume and thermal protection requirements

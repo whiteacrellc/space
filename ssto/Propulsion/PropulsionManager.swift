@@ -123,4 +123,32 @@ class PropulsionManager {
     func getEngine(for mode: EngineMode) -> PropulsionSystem? {
         return engines[mode]
     }
+
+    // MARK: - Static Helper Methods
+
+    /// Determine which engine mode to use based on flight conditions
+    /// This is the canonical implementation for auto engine mode selection
+    /// - Parameters:
+    ///   - altitude: Altitude in feet
+    ///   - speed: Speed in Mach
+    /// - Returns: Recommended engine mode
+    static func selectEngineMode(altitude: Double, speed: Double) -> EngineMode {
+        let altitudeMeters = altitude * PhysicsConstants.feetToMeters
+
+        // Check operating envelopes in order of efficiency
+        if altitudeMeters >= PhysicsConstants.EngineLimits.scramjet.minAltitude
+            && speed >= PhysicsConstants.EngineLimits.scramjet.minSpeed {
+            return .scramjet
+        } else if altitudeMeters >= PhysicsConstants.EngineLimits.ramjet.minAltitude
+            && altitudeMeters <= PhysicsConstants.EngineLimits.ramjet.maxAltitude
+            && speed >= PhysicsConstants.EngineLimits.ramjet.minSpeed
+            && speed <= PhysicsConstants.EngineLimits.ramjet.maxSpeed {
+            return .ramjet
+        } else if altitudeMeters <= PhysicsConstants.EngineLimits.jet.maxAltitude
+            && speed <= PhysicsConstants.EngineLimits.jet.maxSpeed {
+            return .ejectorRamjet
+        } else {
+            return .rocket
+        }
+    }
 }

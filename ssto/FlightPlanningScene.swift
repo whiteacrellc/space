@@ -21,6 +21,7 @@ class FlightPlanningScene: SKScene {
     private var backButton: SKLabelNode?
     private var saveButton: SKLabelNode?
     private var deleteButton: SKLabelNode?
+    private var defaultButton: SKLabelNode?
 
     // Graph elements
     private var graphNode: SKNode?
@@ -65,6 +66,12 @@ class FlightPlanningScene: SKScene {
         // Waypoint editor section (right side) - 10 pixels from right edge
         let inputBoxX = size.width - 150 - 50 // 10px from right, 50 is half the box width (100/2)
         let startY = size.height - 40
+
+        // Default flight plan button (to the left of Delete)
+        defaultButton = createSmallButton(text: "Default", position: CGPoint(x: inputBoxX - 10, y: startY + 10), name: "default_plan")
+        if let button = defaultButton {
+            addChild(button)
+        }
 
         // Delete last waypoint button
         deleteButton = createSmallButton(text: "Delete", position: CGPoint(x: inputBoxX + 80, y: startY + 10), name: "delete_waypoint")
@@ -682,6 +689,8 @@ class FlightPlanningScene: SKScene {
             addWaypoint()
         case "delete_waypoint":
             deleteLastWaypoint()
+        case "default_plan":
+            createDefaultFlightPlan()
         case "simulate":
             startSimulation()
         case "back":
@@ -716,7 +725,7 @@ class FlightPlanningScene: SKScene {
         let waypoint = Waypoint(altitude: altitude, speed: speed, engineMode: currentEngine)
 
         // Validate thermal limits for air-breathing engine waypoints
-        if currentEngine == .scramjet || currentEngine == .ramjet || currentEngine == .jet {
+        if currentEngine == .scramjet || currentEngine == .ramjet || currentEngine == .ejectorRamjet {
             guard let previousWaypoint = flightPlan.waypoints.last else {
                 flightPlan.addWaypoint(waypoint)
                 refreshWaypointList()
@@ -743,7 +752,7 @@ class FlightPlanningScene: SKScene {
                     endWaypoint: waypoint,
                     planeDesign: planeDesign
                 )
-            case .jet:
+            case .ejectorRamjet:
                 validation = JetModule.validateThermalLimits(
                     startWaypoint: previousWaypoint,
                     endWaypoint: waypoint,
@@ -787,6 +796,32 @@ class FlightPlanningScene: SKScene {
 
         // Remove the last waypoint
         flightPlan.removeWaypoint(at: lastIndex)
+        refreshWaypointList()
+        updateGraph()
+    }
+
+    private func createDefaultFlightPlan() {
+        // Clear existing waypoints except the starting one
+        while flightPlan.waypoints.count > 1 {
+            flightPlan.removeWaypoint(at: flightPlan.waypoints.count - 1)
+        }
+
+        // Create default waypoints (altitude in feet, converted from meters)
+        let defaultWaypoints: [(altitudeMeters: Double, speed: Double, engineMode: EngineMode)] = [
+            (20000.0, 3.1, .ejectorRamjet),
+            (40000.0, 6.0, .ramjet),
+            (70000.0, 15.0, .scramjet),
+            (200000.0, 24.0, .rocket)
+        ]
+
+        // Add each waypoint
+        for wp in defaultWaypoints {
+            let altitudeFeet = wp.altitudeMeters * PhysicsConstants.metersToFeet
+            let waypoint = Waypoint(altitude: altitudeFeet, speed: wp.speed, engineMode: wp.engineMode)
+            flightPlan.addWaypoint(waypoint)
+        }
+
+        // Update display
         refreshWaypointList()
         updateGraph()
     }

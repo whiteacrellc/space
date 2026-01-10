@@ -31,10 +31,10 @@ import Foundation
 
 class ThermalModel {
 
-    // Aircraft thermal limits (baseline for default design)
-    static let baseMaxLeadingEdgeTemperature = 1700.0 // °C
-    static let maxSafeTemp = 1700.0 // °C (User required constant)
-    static let baseSustainedTemperature = 1600.0 // °C (warning threshold)
+    // Aircraft thermal limits (FIXED - no design variation)
+    static let baseMaxLeadingEdgeTemperature = 1650.0 // °C (FIXED)
+    static let maxSafeTemp = 1650.0 // °C (FIXED)
+    static let baseSustainedTemperature = 1550.0 // °C (warning threshold)
 
     // Ambient temperature at sea level
     private static let seaLevelTemperatureC = 15.0 // °C
@@ -49,13 +49,15 @@ class ThermalModel {
     private static let coolingEfficiency = 1.5 // 150% efficiency - advanced heat exchanger design with extended surface area
 
     /// Get maximum temperature limit for a given plane design
+    /// Fixed temperature limit - no design variation
     static func getMaxTemperature(for design: PlaneDesign) -> Double {
-        return maxSafeTemp * design.thermalLimitMultiplier()
+        return maxSafeTemp
     }
 
     /// Get sustained temperature threshold for a given plane design
+    /// Fixed temperature limit - no design variation
     static func getSustainedTemperature(for design: PlaneDesign) -> Double {
-        return baseSustainedTemperature * design.thermalLimitMultiplier()
+        return baseSustainedTemperature
     }
     
     /// Calculate leading edge temperature (Convenience method for Feet/Mach)

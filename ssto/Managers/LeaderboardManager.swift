@@ -23,7 +23,8 @@ class LeaderboardManager {
     ///   - volume: Volume of the vehicle in m³
     ///   - optimalLength: Optimal length in meters
     ///   - fuelCapacity: Fuel capacity in kg
-    func addEntry(playerName: String, volume: Double, optimalLength: Double, fuelCapacity: Double) {
+    ///   - designName: Name of the saved design file
+    func addEntry(playerName: String, volume: Double, optimalLength: Double, fuelCapacity: Double, designName: String) {
         var entries = getAllEntries()
 
         let newEntry = LeaderboardEntry(
@@ -31,7 +32,8 @@ class LeaderboardManager {
             volume: volume,
             optimalLength: optimalLength,
             fuelCapacity: fuelCapacity,
-            date: Date()
+            date: Date(),
+            designName: designName
         )
 
         entries.append(newEntry)
@@ -82,6 +84,21 @@ class LeaderboardManager {
             userDefaults.set(data, forKey: leaderboardKey)
         } catch {
             print("Error encoding leaderboard: \(error)")
+        }
+    }
+
+    /// Delete a specific entry by volume
+    /// - Parameter volume: Volume of the entry to delete
+    func deleteEntry(volume: Double) {
+        var entries = getAllEntries()
+
+        // Remove first entry matching this volume
+        if let index = entries.firstIndex(where: { abs($0.volume - volume) < 0.01 }) {
+            entries.remove(at: index)
+            saveEntries(entries)
+            print("✓ Deleted leaderboard entry with volume: \(volume) m³")
+        } else {
+            print("⚠️ Entry not found with volume: \(volume) m³")
         }
     }
 

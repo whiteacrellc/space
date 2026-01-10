@@ -123,8 +123,7 @@ struct RequiredVolumeModel {
         let dryMassGuess = PhysicsConstants.calculateDryMass(
             volumeM3: volumeGuess,
             waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 800.0
+            planeDesign: planeDesign
         )
 
         var currentMass = dryMassGuess + 10000.0 // Add estimated fuel mass

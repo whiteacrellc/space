@@ -163,8 +163,7 @@ class SimulationScene: SKScene {
         let dryMass = PhysicsConstants.calculateDryMass(
             volumeM3: internalVolumeM3,
             waypoints: waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 800.0 // Estimated - will be updated after simulation
+            planeDesign: planeDesign
         )
 
         var currentMass = dryMass + (fuelVolumeLiters * PhysicsConstants.kgPerLiter) // kg (slush hydrogen density)
@@ -571,31 +570,22 @@ class SimulationScene: SKScene {
         let planeDesign = GameManager.shared.getPlaneDesign()
         let flightPlan = GameManager.shared.getFlightPlan()
 
+        // Calculate dry mass (now fixed, no temperature penalty)
         let adjustedMass = PhysicsConstants.calculateDryMass(
             volumeM3: internalVolumeM3,
             waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: result.maxTemperature
+            planeDesign: planeDesign
         )
 
-        // For comparison, calculate with baseline temperature
-        let baseMass = PhysicsConstants.calculateDryMass(
-            volumeM3: internalVolumeM3,
-            waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 600.0 // Baseline (no thermal protection penalty)
-        )
-
-        let massIncrease = adjustedMass - baseMass
-        let percentIncrease = (massIncrease / baseMass) * 100.0
+        // No temperature penalty anymore - these are now the same
+        let baseMass = adjustedMass
+        let massIncrease = 0.0
+        let percentIncrease = 0.0
 
         // Show completion status
         if result.success {
             statusLabel?.text = "ORBIT ACHIEVED!"
             statusLabel?.fontColor = .green
-
-            // Add to leaderboard if successful
-            promptForLeaderboardEntry(result: result)
         } else {
             let finalAltMeters = result.finalAltitude * PhysicsConstants.feetToMeters
             statusLabel?.text = String(format: "FAILED - Reached %dm at Mach %.1f",
@@ -653,65 +643,6 @@ class SimulationScene: SKScene {
                 resultsLabels.append(label)
             }
         }
-    }
-
-    private func promptForLeaderboardEntry(result: MissionResult) {
-        #if os(iOS)
-        guard let viewController = view?.window?.rootViewController else {
-            // Fallback: add with default name
-            addToLeaderboard(playerName: "Player")
-            return
-        }
-
-        let volume = AircraftVolumeModel.calculateInternalVolume()
-
-        // Check if this would make top 10
-        let wouldMakeTop10 = LeaderboardManager.shared.wouldMakeTopTen(volume: volume)
-
-        let title = wouldMakeTop10 ? "Top 10 Achievement!" : "Mission Success!"
-        let message = wouldMakeTop10
-            ? "Your vehicle (\(String(format: "%.1f", volume)) m³) would rank in the top 10!\nEnter your name for the leaderboard:"
-            : "Mission successful! Enter your name:"
-
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-
-        alert.addTextField { textField in
-            textField.placeholder = "Player Name"
-            textField.text = "Player"
-        }
-
-        alert.addAction(UIAlertAction(title: "Submit", style: .default) { [weak self] _ in
-            let name = alert.textFields?.first?.text ?? "Player"
-            self?.addToLeaderboard(playerName: name)
-        })
-
-        alert.addAction(UIAlertAction(title: "Skip", style: .cancel) { [weak self] _ in
-            self?.addToLeaderboard(playerName: "Anonymous")
-        })
-
-        viewController.present(alert, animated: true)
-        #else
-        // For non-iOS platforms, use default name
-        addToLeaderboard(playerName: "Player")
-        #endif
-    }
-
-    private func addToLeaderboard(playerName: String) {
-        let planform = GameManager.shared.getTopViewPlanform()
-        let optimalLength = planform.aircraftLength
-
-        // Calculate internal volume and fuel capacity
-        let internalVolumeM3 = AircraftVolumeModel.calculateInternalVolume()
-        let fuelCapacityKg = internalVolumeM3 * 1000.0 * PhysicsConstants.kgPerLiter // Slush hydrogen density
-
-        LeaderboardManager.shared.addEntry(
-            playerName: playerName.isEmpty ? "Player" : playerName,
-            volume: internalVolumeM3,
-            optimalLength: optimalLength,
-            fuelCapacity: fuelCapacityKg
-        )
-
-        print("Added to leaderboard: \(playerName) with \(String(format: "%.1f", internalVolumeM3)) m³ volume")
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

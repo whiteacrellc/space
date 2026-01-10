@@ -80,8 +80,7 @@ class NewtonModule {
         let dryMass = PhysicsConstants.calculateDryMass(
             volumeM3: aircraftVolume,
             waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 800.0
+            planeDesign: planeDesign
         )
         let currentMass = dryMass + fuelCapacity - fuelRequired
 
@@ -204,8 +203,7 @@ class NewtonModule {
             let dryWeight = PhysicsConstants.calculateDryMass(
                 volumeM3: aircraftVolume,
                 waypoints: flightPlan.waypoints,
-                planeDesign: planeDesign,
-                maxTemperature: 800.0
+                planeDesign: planeDesign
             )
 
             print("Iteration \(iteration):")
@@ -288,8 +286,7 @@ class NewtonModule {
         let finalDryWeight = PhysicsConstants.calculateDryMass(
             volumeM3: aircraftVolume,
             waypoints: flightPlan.waypoints,
-            planeDesign: planeDesign,
-            maxTemperature: 800.0
+            planeDesign: planeDesign
         )
 
         // Final report

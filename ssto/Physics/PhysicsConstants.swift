@@ -32,21 +32,23 @@ struct PhysicsConstants {
     static let referenceArea = 500.0 // m² cross-sectional area (baseline)
 
     /// Calculate actual dry mass based on aircraft design and flight plan
+    /// Calculate total dry mass based on wetted surface area
     /// - Parameters:
     ///   - volumeM3: Internal volume in cubic meters
     ///   - waypoints: Flight plan waypoints
     ///   - planeDesign: Aircraft design parameters
-    ///   - maxTemperature: Maximum expected temperature in Celsius (default 800°C)
     /// - Returns: Calculated dry mass in kg
     static func calculateDryMass(
         volumeM3: Double,
         waypoints: [Waypoint],
-        planeDesign: PlaneDesign,
-        maxTemperature: Double = 800.0
+        planeDesign: PlaneDesign
     ) -> Double {
+        // Calculate surface area breakdown from current design
+        let areaBreakdown = AircraftVolumeModel.calculateWettedSurfaceArea()
+
         return EngineWeightModel.calculateDryMass(
+            areaBreakdown: areaBreakdown,
             volumeM3: volumeM3,
-            maxTemperature: maxTemperature,
             waypoints: waypoints,
             planeDesign: planeDesign
         )
@@ -100,24 +102,6 @@ struct PhysicsConstants {
     /// Atmospheric density at altitude (meters)
     static func atmosphericDensity(at altitudeMeters: Double) -> Double {
         return AtmosphereModel.atmosphericDensity(at: altitudeMeters)
-    }
-
-    /// Calculate adjusted dry mass based on maximum temperature experienced
-    /// Weight increases by 0.3% for every 100°C over 600°C
-    /// - Parameter maxTemperature: Maximum temperature in Celsius
-    /// - Returns: Adjusted dry mass in kg
-    static func adjustedDryMass(maxTemperature: Double) -> Double {
-        let baseTemperature = 600.0 // °C
-        let weightIncreasePerDegree = 0.00003 // 0.3% per 100°C = 0.00003 per °C
-
-        if maxTemperature <= baseTemperature {
-            return dryMass
-        }
-
-        let temperatureExcess = maxTemperature - baseTemperature
-        let weightMultiplier = 1.0 + (weightIncreasePerDegree * temperatureExcess)
-
-        return dryMass * weightMultiplier
     }
 
     /// Check if orbital parameters are achieved

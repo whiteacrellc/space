@@ -40,6 +40,7 @@ class SideProfileShapeView: UIView {
     // Parameters
     var engineLength: CGFloat = 125.0
     var maxHeight: CGFloat = 120.0
+    var aircraftLengthMeters: CGFloat = 70.0  // Actual aircraft length in meters
 
     // Canvas dimensions (model space)
     let canvasWidth: CGFloat = 800.0
@@ -190,14 +191,15 @@ class SideProfileShapeView: UIView {
         let payloadLength: CGFloat = 20.0 // 20m long
         let payloadHeight: CGFloat = 3.0  // 3m high
 
-        // Scale: canvas width (800) represents approximately 70 meters
-        let scale = canvasWidth / 70.0  // ~11.43 units per meter
+        // Get correct scale based on actual aircraft length
+        let metersPerUnit = calculateMetersPerUnit()
+        let unitsPerMeter = 1.0 / metersPerUnit
 
         // Convert to canvas units
-        let pilotLengthCanvas = pilotLength * scale
-        let pilotHeightCanvas = pilotHeight * scale
-        let payloadLengthCanvas = payloadLength * scale
-        let payloadHeightCanvas = payloadHeight * scale
+        let pilotLengthCanvas = pilotLength * unitsPerMeter
+        let pilotHeightCanvas = pilotHeight * unitsPerMeter
+        let payloadLengthCanvas = payloadLength * unitsPerMeter
+        let payloadHeightCanvas = payloadHeight * unitsPerMeter
 
         // Calculate the middle of the aircraft (between nose and tail)
         let aircraftMiddleX = (inletStart.x + nozzleEnd.x) / 2.0
@@ -304,6 +306,13 @@ class SideProfileShapeView: UIView {
 
     // MARK: - Coordinate Conversion
 
+    /// Calculate the correct meters-per-canvas-unit ratio based on actual aircraft length
+    private func calculateMetersPerUnit() -> CGFloat {
+        let aircraftLengthCanvas = nozzleEnd.x - inletStart.x
+        guard aircraftLengthCanvas > 0 else { return 70.0 / canvasWidth }
+        return aircraftLengthMeters / aircraftLengthCanvas
+    }
+
     /// Convert from model coordinates (origin bottom-left, Y up) to view coordinates (origin top-left, Y down)
     func modelToView(_ point: CGPoint) -> CGPoint {
         let scaledX = point.x * viewScale
@@ -358,6 +367,9 @@ class SSTODesignViewController: UIViewController {
     private let canvasHeight: CGFloat = 400.0
     private let centerlineY: CGFloat = 200.0  // Y-coordinate of centerline in model space
 
+    // Cache actual aircraft length from TopViewPlanform
+    private var actualAircraftLengthMeters: CGFloat = 70.0
+
     // MARK: - Lifecycle
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
@@ -397,6 +409,11 @@ class SSTODesignViewController: UIViewController {
         doneButton.addTarget(self, action: #selector(doneButtonTapped), for: .touchUpInside)
         headerView.addSubview(doneButton)
 
+        // Reset button
+        let resetButton = createHeaderButton(title: "Reset", color: .red)
+        resetButton.addTarget(self, action: #selector(resetButtonTapped), for: .touchUpInside)
+        headerView.addSubview(resetButton)
+
         // Title
         let titleLabel = UILabel()
         titleLabel.text = "Side Profile Designer"
@@ -431,6 +448,7 @@ class SSTODesignViewController: UIViewController {
         // Layout
         headerView.translatesAutoresizingMaskIntoConstraints = false
         doneButton.translatesAutoresizingMaskIntoConstraints = false
+        resetButton.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         saveButton.translatesAutoresizingMaskIntoConstraints = false
@@ -445,6 +463,9 @@ class SSTODesignViewController: UIViewController {
 
             doneButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 20),
             doneButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+
+            resetButton.leadingAnchor.constraint(equalTo: doneButton.trailingAnchor, constant: 10),
+            resetButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
 
             titleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
             titleLabel.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 15),
@@ -515,7 +536,7 @@ class SSTODesignViewController: UIViewController {
         aircraftLengthValueLabel.textAlignment = .right
 
         aircraftLengthSlider.minimumValue = 30
-        aircraftLengthSlider.maximumValue = 150
+        aircraftLengthSlider.maximumValue = 1000
         aircraftLengthSlider.value = 70
         aircraftLengthSlider.minimumTrackTintColor = .orange
         aircraftLengthSlider.maximumTrackTintColor = UIColor.gray.withAlphaComponent(0.3)
@@ -672,18 +693,21 @@ class SSTODesignViewController: UIViewController {
         shapeView.engineLength = CGFloat(profile.engineLength)
         shapeView.maxHeight = CGFloat(profile.maxHeight)
 
-        // Calculate aircraft length (from nose to tail in meters, assuming canvas scale)
-        let aircraftLengthCanvas = shapeView.nozzleEnd.x - shapeView.inletStart.x
-        let scale = canvasWidth / 70.0  // Canvas scale: ~11.43 units per meter
-        let aircraftLengthMeters = aircraftLengthCanvas / scale
+        // Get actual aircraft length from planform (single source of truth)
+        let planform = GameManager.shared.getTopViewPlanform()
+        actualAircraftLengthMeters = CGFloat(planform.aircraftLength)
+        shapeView.aircraftLengthMeters = actualAircraftLengthMeters
 
         // Update UI controls
         engineLengthSlider.value = Float(profile.engineLength)
         maxHeightSlider.value = Float(profile.maxHeight)
-        aircraftLengthSlider.value = Float(aircraftLengthMeters)
+        aircraftLengthSlider.value = Float(actualAircraftLengthMeters)
         engineLengthValueLabel.text = String(format: "%.0f", profile.engineLength)
         maxHeightValueLabel.text = String(format: "%.0f", profile.maxHeight)
-        aircraftLengthValueLabel.text = String(format: "%.0f", aircraftLengthMeters)
+        aircraftLengthValueLabel.text = String(format: "%.0f", actualAircraftLengthMeters)
+
+        // Update max engine length constraint
+        updateMaxEngineLength()
     }
 
     private func setupControlPoints() {
@@ -706,6 +730,7 @@ class SSTODesignViewController: UIViewController {
 
             self.updateControlPointPositions()
             self.shapeView.setNeedsDisplay()
+            self.adjustViewToFitAircraft()
         }
 
         // Inlet control point (free movement for inlet curve shape)
@@ -792,6 +817,7 @@ class SSTODesignViewController: UIViewController {
 
             self.updateControlPointPositions()
             self.shapeView.setNeedsDisplay()
+            self.adjustViewToFitAircraft()
         }
 
         // Top control point (free movement - controls top curve and max height)
@@ -808,6 +834,7 @@ class SSTODesignViewController: UIViewController {
             self.maxHeightValueLabel.text = String(format: "%.0f", newMaxHeight)
 
             self.shapeView.setNeedsDisplay()
+            self.adjustViewToFitAircraft()
         }
     }
 
@@ -841,6 +868,28 @@ class SSTODesignViewController: UIViewController {
         let startX = Int(shapeView.inletEnd.x)
         let endX = Int(shapeView.engineEnd.x)
         enginePositionLabel.text = "Engine: \(startX) → \(endX)"
+    }
+
+    private func updateMaxEngineLength() {
+        // Calculate aircraft length in canvas units
+        let aircraftLengthCanvas = shapeView.nozzleEnd.x - shapeView.inletStart.x
+
+        // Max engine length is the smaller of 100 units or half the aircraft length
+        let halfAircraftLength = aircraftLengthCanvas / 2.0
+        let maxEngineLength = min(100.0, halfAircraftLength)
+
+        // Update slider maximum value
+        engineLengthSlider.maximumValue = Float(maxEngineLength)
+
+        // If current engine length exceeds new max, clamp it
+        if shapeView.engineLength > maxEngineLength {
+            shapeView.engineLength = maxEngineLength
+            shapeView.engineEnd.x = shapeView.inletEnd.x + maxEngineLength
+            engineLengthSlider.value = Float(maxEngineLength)
+            engineLengthValueLabel.text = String(format: "%.0f", maxEngineLength)
+            updateControlPointPositions()
+            shapeView.setNeedsDisplay()
+        }
     }
 
     private func adjustViewToFitAircraft() {
@@ -914,6 +963,7 @@ class SSTODesignViewController: UIViewController {
             updateEnginePositionLabel()
             updateControlPointPositions()
             shapeView.setNeedsDisplay()
+            adjustViewToFitAircraft()  // Adjust view to center and fit the aircraft
         } else {
             // Revert slider if exceeds bounds
             slider.value = Float(shapeView.engineEnd.x - shapeView.inletEnd.x)
@@ -931,18 +981,23 @@ class SSTODesignViewController: UIViewController {
         maxHeightValueLabel.text = String(format: "%.0f", newMaxHeight)
         updateControlPointPositions()
         shapeView.setNeedsDisplay()
+        adjustViewToFitAircraft()  // Adjust view to center and fit the aircraft
     }
 
     @objc private func aircraftLengthChanged(_ slider: UISlider) {
         let newLengthMeters = CGFloat(slider.value)
-        let scale = canvasWidth / 70.0  // Canvas scale: ~11.43 units per meter
 
-        // Calculate current aircraft length
+        // Calculate current aircraft length using actual scale
         let currentLengthCanvas = shapeView.nozzleEnd.x - shapeView.inletStart.x
-        let currentLengthMeters = currentLengthCanvas / scale
+        let currentMetersPerUnit = actualAircraftLengthMeters / currentLengthCanvas
+        let currentLengthMetersCalculated = currentLengthCanvas * currentMetersPerUnit
 
         // Calculate scale factor
-        let scaleFactor = newLengthMeters / currentLengthMeters
+        let scaleFactor = newLengthMeters / currentLengthMetersCalculated
+
+        // Update cached length
+        actualAircraftLengthMeters = newLengthMeters
+        shapeView.aircraftLengthMeters = newLengthMeters
 
         // Scale relative to (nose X, canvas center Y)
         let originX = shapeView.inletStart.x
@@ -983,6 +1038,9 @@ class SSTODesignViewController: UIViewController {
 
         updateEnginePositionLabel()
         adjustViewToFitAircraft()  // Adjust view to fit the scaled aircraft
+
+        // Update max engine length constraint based on new aircraft length
+        updateMaxEngineLength()
     }
 
     @objc private func show3DView() {
@@ -996,6 +1054,57 @@ class SSTODesignViewController: UIViewController {
     @objc private func doneButtonTapped() {
         saveToGameManager()
         dismiss(animated: true, completion: nil)
+    }
+
+    @objc private func resetButtonTapped() {
+        // Load default profile
+        let profile = SideProfileShape.defaultProfile
+        let viewCenterY = canvasHeight / 2
+
+        // Helper to convert from saved model coordinates to view model coordinates
+        func convertPoint(_ savedPoint: SerializablePoint) -> CGPoint {
+            let offsetFromCenterline = CGFloat(savedPoint.y) - centerlineY
+            return CGPoint(x: CGFloat(savedPoint.x), y: viewCenterY + offsetFromCenterline)
+        }
+
+        // Load all points from default profile
+        shapeView.inletStart = convertPoint(profile.frontStart)
+        shapeView.inletControl = convertPoint(profile.frontControl)
+        shapeView.inletEnd = convertPoint(profile.frontEnd)
+        shapeView.engineEnd = convertPoint(profile.engineEnd)
+        shapeView.nozzleControl = convertPoint(profile.exhaustControl)
+        shapeView.nozzleEnd = convertPoint(profile.exhaustEnd)
+        shapeView.topStart = convertPoint(profile.topStart)
+        shapeView.topControl = convertPoint(profile.topControl)
+        shapeView.topEnd = convertPoint(profile.topEnd)
+
+        shapeView.engineStart = shapeView.inletEnd
+
+        // Ensure nose and tail points are consistent
+        shapeView.topStart = shapeView.inletStart  // Nose: top and bottom meet
+        shapeView.topEnd = shapeView.nozzleEnd     // Tail: top and bottom meet
+        shapeView.engineLength = CGFloat(profile.engineLength)
+        shapeView.maxHeight = CGFloat(profile.maxHeight)
+
+        // Reset aircraft length to default (70m)
+        actualAircraftLengthMeters = 70.0
+        shapeView.aircraftLengthMeters = actualAircraftLengthMeters
+
+        // Update UI controls
+        engineLengthSlider.value = Float(profile.engineLength)
+        maxHeightSlider.value = Float(profile.maxHeight)
+        aircraftLengthSlider.value = Float(actualAircraftLengthMeters)
+        engineLengthValueLabel.text = String(format: "%.0f", profile.engineLength)
+        maxHeightValueLabel.text = String(format: "%.0f", profile.maxHeight)
+        aircraftLengthValueLabel.text = String(format: "%.0f", actualAircraftLengthMeters)
+
+        // Update control points and refresh view
+        updateControlPointPositions()
+        shapeView.setNeedsDisplay()
+        adjustViewToFitAircraft()
+
+        // Update max engine length constraint
+        updateMaxEngineLength()
     }
 
     @objc private func saveButtonTapped() {

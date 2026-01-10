@@ -116,7 +116,58 @@ class FlightSimulator {
                  // Overspeed protection
                  thrust *= 0.0
             }
-            
+
+            // MAX G LIMITING FOR ROCKET MODE
+            // Throttle rocket thrust to maintain G-force limit
+            if propulsionManager.currentMode == .rocket {
+                let gravityAccelTemp = PhysicsConstants.gravity(at: h)
+                let massTemp = dryMass + fuelMass
+
+                // Calculate current drag estimate for G calculation
+                // Use zero lift for initial estimate
+                let dragEstimate = dragCalculator.calculateDrag(altitude: h, velocity: v, lift: 0)
+
+                // Calculate max allowed thrust to stay at maxG limit
+                // acceleration = (thrust - drag - gravity*sin(gamma)) / mass
+                // maxG * g0 = (thrust_max - drag - gravity*sin(gamma)) / mass
+                // thrust_max = mass * maxG * g0 + drag + gravity*sin(gamma)*mass
+                let g0 = 9.80665
+                let maxAllowedAccel = end.maxG * g0
+                let gravityDragTemp = massTemp * gravityAccelTemp * sinGamma
+                let maxAllowedThrust = massTemp * maxAllowedAccel + dragEstimate + gravityDragTemp
+
+                // Throttle down if current thrust exceeds limit
+                if thrust > maxAllowedThrust {
+                    thrust = maxAllowedThrust
+                }
+            }
+
+            // MAX DYNAMIC PRESSURE LIMITING (for all engine modes)
+            // Reduce thrust when dynamic pressure exceeds safe limit
+            let density = AtmosphereModel.atmosphericDensity(at: h)
+            let dynamicPressure = 0.5 * density * v * v
+
+            // Max Q limits vary by engine mode (in Pascals)
+            let maxDynamicPressure: Double
+            switch propulsionManager.currentMode {
+            case .ejectorRamjet:
+                maxDynamicPressure = 50000.0 // 50 kPa - subsonic inlet limit
+            case .ramjet:
+                maxDynamicPressure = 75000.0 // 75 kPa - structural limit
+            case .scramjet:
+                maxDynamicPressure = 100000.0 // 100 kPa - high-speed structural limit
+            case .rocket:
+                maxDynamicPressure = 150000.0 // 150 kPa - payload bay pressure limit
+            case .auto:
+                maxDynamicPressure = 50000.0 // Conservative default
+            }
+
+            // Scale thrust down if Q exceeds limit
+            if dynamicPressure > maxDynamicPressure {
+                let scaleFactor = maxDynamicPressure / dynamicPressure
+                thrust *= scaleFactor
+            }
+
             // Calculate Lift Required (Equilibrium Glide/Climb)
             // L = W * cos(gamma) - CentrifugalForce
             // F_centrifugal = m * v^2 / r

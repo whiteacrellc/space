@@ -15,6 +15,7 @@ class FlightPlanningScene: SKScene {
     private var titleLabel: SKLabelNode?
     private var altitudeInputBox: TextInputBox?
     private var speedInputBox: TextInputBox?
+    private var maxGInputBox: TextInputBox?
     private var engineLabel: SKLabelNode?
     private var addButton: SKLabelNode?
     private var simulateButton: SKLabelNode?
@@ -38,6 +39,7 @@ class FlightPlanningScene: SKScene {
     private var currentAltitudeThousands: Int = 100 // In thousands of feet
     private var currentSpeed: Double = 10.0
     private var currentEngine: EngineMode = .auto
+    private var currentMaxG: Double = 2.0 // Maximum G-force for rocket mode
 
     // Active text input
     private var activeInput: TextInputBox?
@@ -136,26 +138,46 @@ class FlightPlanningScene: SKScene {
         let engineButton = createSmallButton(text: "Change", position: CGPoint(x: inputBoxX + 80, y: startY - 140), name: "change_engine")
         addChild(engineButton)
 
+        // Max G input (for rocket mode)
+        let maxGTitleLabel = SKLabelNode(text: "Max G (Rocket):")
+        maxGTitleLabel.fontName = "AvenirNext-Regular"
+        maxGTitleLabel.fontSize = 16
+        maxGTitleLabel.fontColor = .white
+        maxGTitleLabel.position = CGPoint(x: inputBoxX - 50, y: startY - 180)
+        maxGTitleLabel.horizontalAlignmentMode = .right
+        addChild(maxGTitleLabel)
+
+        maxGInputBox = TextInputBox(
+            position: CGPoint(x: inputBoxX + 50, y: startY - 185),
+            width: 100,
+            height: 35,
+            initialValue: "2.0",
+            inputType: .float
+        )
+        if let inputBox = maxGInputBox {
+            addChild(inputBox)
+        }
+
         // Add waypoint button
-        addButton = createButton(text: "Add Waypoint", position: CGPoint(x: inputBoxX, y: startY - 200), name: "add_waypoint")
+        addButton = createButton(text: "Add Waypoint", position: CGPoint(x: inputBoxX, y: startY - 230), name: "add_waypoint")
         if let button = addButton {
             addChild(button)
         }
 
         // Start simulation button (under add waypoint)
-        simulateButton = createButton(text: "Start Simulation", position: CGPoint(x: inputBoxX, y: startY - 248), name: "simulate")
+        simulateButton = createButton(text: "Start Simulation", position: CGPoint(x: inputBoxX, y: startY - 272), name: "simulate")
         if let button = simulateButton {
             addChild(button)
         }
 
         // Back button (under start simulation)
-        backButton = createButton(text: "Back to Menu", position: CGPoint(x: inputBoxX, y: startY - 296), name: "back")
+        backButton = createButton(text: "Back to Menu", position: CGPoint(x: inputBoxX, y: startY - 314), name: "back")
         if let button = backButton {
             addChild(button)
         }
 
         // Save button (under back button)
-        saveButton = createButton(text: "Save Game", position: CGPoint(x: inputBoxX, y: startY - 344), name: "save_game")
+        saveButton = createButton(text: "Save Game", position: CGPoint(x: inputBoxX, y: startY - 356), name: "save_game")
         if let button = saveButton {
             addChild(button)
         }
@@ -534,13 +556,13 @@ class FlightPlanningScene: SKScene {
     private func createButton(text: String, position: CGPoint, name: String) -> SKLabelNode {
         let button = SKLabelNode(text: text)
         button.fontName = "AvenirNext-Medium"
-        button.fontSize = 20
+        button.fontSize = 17
         button.fontColor = .white
         button.position = position
         button.name = name
         button.verticalAlignmentMode = .center
 
-        let background = SKShapeNode(rectOf: CGSize(width: 200, height: 40), cornerRadius: 8)
+        let background = SKShapeNode(rectOf: CGSize(width: 160, height: 32), cornerRadius: 6)
         background.fillColor = UIColor(white: 0.2, alpha: 0.6)
         background.strokeColor = .white
         background.lineWidth = 2
@@ -582,6 +604,11 @@ class FlightPlanningScene: SKScene {
 
         if let speedBox = speedInputBox, speedBox.contains(location) {
             activateInput(speedBox)
+            return
+        }
+
+        if let maxGBox = maxGInputBox, maxGBox.contains(location) {
+            activateInput(maxGBox)
             return
         }
 
@@ -721,8 +748,16 @@ class FlightPlanningScene: SKScene {
             return
         }
 
+        // Get maxG value (default to 2.0 if not provided)
+        let maxG: Double
+        if let maxGText = maxGInputBox?.getValue(), let value = Double(maxGText) {
+            maxG = value
+        } else {
+            maxG = 2.0
+        }
+
         let altitude = Double(altMeters) * PhysicsConstants.metersToFeet // Convert meters to feet
-        let waypoint = Waypoint(altitude: altitude, speed: speed, engineMode: currentEngine)
+        let waypoint = Waypoint(altitude: altitude, speed: speed, engineMode: currentEngine, maxG: maxG)
 
         // Validate thermal limits for air-breathing engine waypoints
         if currentEngine == .scramjet || currentEngine == .ramjet || currentEngine == .ejectorRamjet {

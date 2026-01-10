@@ -11,11 +11,22 @@ struct Waypoint: Codable, Equatable {
     var altitude: Double // feet
     var speed: Double // Mach number
     var engineMode: EngineMode // .auto, .jet, .ramjet, .scramjet, .rocket
+    var maxG: Double // Maximum G-force limit for rocket mode (default: 2.0)
 
-    init(altitude: Double, speed: Double, engineMode: EngineMode = .auto) {
+    init(altitude: Double, speed: Double, engineMode: EngineMode = .auto, maxG: Double = 2.0) {
         self.altitude = altitude
         self.speed = speed
         self.engineMode = engineMode
+        self.maxG = maxG
+    }
+
+    // Custom decoding to handle old saves without maxG field
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        altitude = try container.decode(Double.self, forKey: .altitude)
+        speed = try container.decode(Double.self, forKey: .speed)
+        engineMode = try container.decode(EngineMode.self, forKey: .engineMode)
+        maxG = try container.decodeIfPresent(Double.self, forKey: .maxG) ?? 2.0
     }
 
     /// Validate that this waypoint is physically reasonable
@@ -25,6 +36,9 @@ struct Waypoint: Codable, Equatable {
 
         // Speed must be non-negative
         guard speed >= 0 else { return false }
+
+        // Max G must be positive
+        guard maxG > 0 else { return false }
 
         // Check if engine mode is appropriate for speed
         switch engineMode {

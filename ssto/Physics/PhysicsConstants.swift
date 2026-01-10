@@ -27,6 +27,7 @@ struct PhysicsConstants {
 
     // Aircraft properties (calculated based on fuel volume and design)
     static let dryMass = 15000.0 // kg (baseline - used only as fallback)
+    static let cargoMass = 22800.0 // kg (fixed cargo/payload weight)
     static let dragCoefficient = 0.02
     static let referenceArea = 500.0 // m² cross-sectional area (baseline)
 

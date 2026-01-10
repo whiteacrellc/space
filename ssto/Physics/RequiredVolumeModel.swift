@@ -16,11 +16,11 @@ struct RequiredVolumeModel {
 
     // MARK: - Fixed Volume Requirements
 
-    /// Payload box volume (20m × 5m × 5m)
-    static let payloadVolume = 20.0 * 5.0 * 5.0 // 500 m³
+    /// Payload box volume (3m × 3m × 20m)
+    static let payloadVolume = 3.0 * 3.0 * 20.0 // 180 m³
 
-    /// Pilot box volume (6m × 6m × 3m)
-    static let pilotVolume = 6.0 * 6.0 * 3.0 // 108 m³
+    /// Pilot box volume (3m × 3m × 5m)
+    static let pilotVolume = 3.0 * 3.0 * 5.0 // 45 m³
 
     // MARK: - Fuel Densities
 

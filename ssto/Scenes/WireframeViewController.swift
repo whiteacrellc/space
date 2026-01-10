@@ -863,13 +863,13 @@ class WireframeViewController: UIViewController {
     }
 
     private func addPayloadBox(centerOffset: SCNVector3, profile: SideProfileShape) {
-        // Payload box: 20m long × 5m wide × 5m tall
+        // Payload box (Cargo): 20m long × 3m wide × 3m tall
         // Position centered in the middle of aircraft
 
         // Dimensions in meters
         let boxLengthMeters: CGFloat = 20.0
-        let boxWidthMeters: CGFloat = 5.0
-        let boxHeightMeters: CGFloat = 5.0
+        let boxWidthMeters: CGFloat = 3.0
+        let boxHeightMeters: CGFloat = 3.0
 
         // Scale factor: canvas units per meter (canvas is ~800 units for ~70 meters)
         let canvasWidth: CGFloat = 800.0
@@ -945,12 +945,12 @@ class WireframeViewController: UIViewController {
     }
     
     private func addPilotBox(centerOffset: SCNVector3, profile: SideProfileShape) {
-        // Pilot box: 6m long × 6m wide × 3m tall
+        // Pilot box: 5m long × 3m wide × 3m tall
         // Positioned in front of payload box with right edge aligned
 
         // Dimensions in meters
-        let boxLengthMeters: CGFloat = 6.0
-        let boxWidthMeters: CGFloat = 6.0
+        let boxLengthMeters: CGFloat = 5.0
+        let boxWidthMeters: CGFloat = 3.0
         let boxHeightMeters: CGFloat = 3.0
         let payloadLengthMeters: CGFloat = 20.0
 

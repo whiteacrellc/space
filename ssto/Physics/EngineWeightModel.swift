@@ -77,8 +77,10 @@ struct EngineWeightModel {
         let velocityMs = speed * speedOfSound
 
         // Calculate drag
+        // Note: Drag is now computed from actual geometry via panel methods during simulation.
+        // This is a conservative estimate for engine sizing only.
         let density = AtmosphereModel.atmosphericDensity(at: altitude)
-        let dragCoefficient = 0.02 * planeDesign.dragMultiplier()
+        let dragCoefficient = 0.025  // Conservative baseline for engine sizing
         let referenceArea = 50.0 // m²
         let drag = 0.5 * density * velocityMs * velocityMs * dragCoefficient * referenceArea
 

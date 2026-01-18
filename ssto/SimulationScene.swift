@@ -570,17 +570,12 @@ class SimulationScene: SKScene {
         let planeDesign = GameManager.shared.getPlaneDesign()
         let flightPlan = GameManager.shared.getFlightPlan()
 
-        // Calculate dry mass (now fixed, no temperature penalty)
+        // Calculate dry mass (no temperature penalty with new aerodynamics system)
         let adjustedMass = PhysicsConstants.calculateDryMass(
             volumeM3: internalVolumeM3,
             waypoints: flightPlan.waypoints,
             planeDesign: planeDesign
         )
-
-        // No temperature penalty anymore - these are now the same
-        let baseMass = adjustedMass
-        let massIncrease = 0.0
-        let percentIncrease = 0.0
 
         // Show completion status
         if result.success {
@@ -594,13 +589,13 @@ class SimulationScene: SKScene {
         }
 
         // Display detailed results as a list on the left
-        displayResultsList(result: result, adjustedMass: adjustedMass, percentIncrease: percentIncrease)
+        displayResultsList(result: result, adjustedMass: adjustedMass)
 
         // Show done button
         doneButton?.isHidden = false
     }
 
-    private func displayResultsList(result: MissionResult, adjustedMass: Double, percentIncrease: Double) {
+    private func displayResultsList(result: MissionResult, adjustedMass: Double) {
         // Remove any existing result labels
         resultsLabels.forEach { $0.removeFromParent() }
         resultsLabels.removeAll()
@@ -613,6 +608,10 @@ class SimulationScene: SKScene {
         let internalVolumeM3 = AircraftVolumeModel.calculateInternalVolume()
         let fuelCapacityKg = internalVolumeM3 * 1000.0 * PhysicsConstants.kgPerLiter
 
+        // Get aircraft length from planform
+        let planform = GameManager.shared.getTopViewPlanform()
+        let aircraftLengthM = planform.aircraftLength
+
         // Create result labels
         let resultData: [(String, UIColor)] = [
             ("Score: \(result.score)", .green),
@@ -623,7 +622,7 @@ class SimulationScene: SKScene {
             ("", .clear),  // Spacer
             ("Max Temperature: \(Int(result.maxTemperature))°C", result.maxTemperature > 1600 ? .orange : .white),
             ("Dry Mass: \(Int(adjustedMass).formatted()) kg", .green),
-            ("Thermal Penalty: +\(String(format: "%.1f", percentIncrease))%", percentIncrease > 10 ? .orange : .green),
+            ("Aircraft Length: \(String(format: "%.1f", aircraftLengthM)) m", .cyan),
             ("", .clear),  // Spacer
             ("Fuel Used: \(Int(result.totalFuelUsed).formatted()) kg", .white),
             ("Fuel Capacity: \(Int(fuelCapacityKg).formatted()) kg", .white),

@@ -14,28 +14,26 @@ import CoreGraphics
 // MARK: - Aerodynamic Configuration
 
 /// Stores derived geometric and aerodynamic properties of the aircraft
+/// NOTE: This is a legacy drag calculator. Use PanelAerodynamicsSolver for accurate drag calculation.
 struct AerodynamicConfiguration {
     let referenceArea: Double       // Planform Area (m²) - S
     let wingspan: Double            // Wingspan (m) - b
     let aspectRatio: Double         // AR = b² / S
     let oswaldEfficiency: Double    // e (0.7 - 0.9 typically)
-    let dragMultiplier: Double      // Shape factor from design (1.0 nominal)
-    
+
     /// Initialize from raw geometry
     init(planform: TopViewPlanform, design: PlaneDesign) {
         // Calculate geometry
         let (area, span) = GeometryAnalyzer.calculatePlanformProperties(planform: planform)
-        
+
         self.referenceArea = max(1.0, area) // Avoid div/0
         self.wingspan = span
         self.aspectRatio = (span * span) / self.referenceArea
-        
+
         // Estimate Oswald Efficiency based on Sweep
         // Highly swept wings typically have lower 'e' at low speeds but are optimized for high speed
         // Simple approximation:
         self.oswaldEfficiency = 0.85
-        
-        self.dragMultiplier = design.dragMultiplier()
     }
 }
 
@@ -323,8 +321,8 @@ class DragCalculator {
             cd = baselineZeroLiftCd * 2.0
         }
 
-        // Apply plane design drag multiplier (shape factor penalty)
-        cd *= config.dragMultiplier
+        // NOTE: Legacy drag calculator - no shape adjustments applied.
+        // Use PanelAerodynamicsSolver for accurate drag from actual geometry.
 
         return cd
     }

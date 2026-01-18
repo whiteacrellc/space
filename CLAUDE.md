@@ -79,10 +79,11 @@ Located in `ssto/Propulsion/`:
 
 #### Design Scoring
 `PlaneDesign` (in `ssto/Models/PlaneDesign.swift`) calculates performance multipliers:
-- **dragMultiplier()**: Penalizes non-optimal sweep/tilt/position (affects drag)
 - **thermalLimitMultiplier()**: Sharp leading edges heat faster (lower max temp)
 - **heatingRateMultiplier()**: Inverse of thermal limit
 - Optimal design: tilt=0°, sweep=80-100°, position=174
+
+**Note:** Drag is now computed from actual aircraft geometry using panel methods (`PanelAerodynamicsSolver`). The old `dragMultiplier()` has been removed.
 
 ### Data Models
 - **PlaneDesign**: Cone-plane parameters (sweep, tilt, position) with physics multipliers

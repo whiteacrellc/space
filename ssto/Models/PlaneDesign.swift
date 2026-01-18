@@ -28,45 +28,6 @@ struct PlaneDesign: Codable {
     /// Optimal design for best overall performance
     static let optimalDesign = PlaneDesign(tiltAngle: optimalTilt, sweepAngle: optimalSweep, position: optimalPosition)
 
-    /// DEPRECATED: Drag is now computed from actual aircraft geometry using panel methods.
-    /// This method is kept for backward compatibility and legacy scoring only.
-    /// For actual drag calculation, see PanelAerodynamicsSolver.
-    @available(*, deprecated, message: "Drag is now computed from panel method aerodynamics. Use PanelAerodynamicsSolver instead.")
-    func dragMultiplier() -> Double {
-        var multiplier = 0.3
-
-        // Position effect: too small increases drag (plane too thick for fuel capacity)
-        // Optimal around 129, penalty increases as we move toward apex
-        let positionFromOptimal = abs(position - PlaneDesign.optimalPosition)
-        let positionPenalty = positionFromOptimal / 150.0 * 0.3  // Up to 30% penalty
-        multiplier += positionPenalty
-
-        // Sweep angle effect: Outside 90-100 range increases drag
-        var sweepPenalty = 0.0
-        if sweepAngle < PlaneDesign.sweepNeutralMin {
-            // Below 90: increasingly bad
-            let deviation = PlaneDesign.sweepNeutralMin - sweepAngle
-            sweepPenalty = deviation / 25.0 * 0.4  // Up to 40% penalty at 45°
-        } else if sweepAngle > PlaneDesign.sweepNeutralMax {
-            // Above 100: increasingly bad
-            let deviation = sweepAngle - PlaneDesign.sweepNeutralMax
-            sweepPenalty = deviation / 40.0 * 0.4  // Up to 40% penalty at 135°
-        } else {
-            // Within neutral zone: lower sweep = better drag
-            // Linearly interpolate: 90° is best (0% bonus), 100° is worst (10% penalty)
-            let normalizedSweep = (sweepAngle - PlaneDesign.sweepNeutralMin) / (PlaneDesign.sweepNeutralMax - PlaneDesign.sweepNeutralMin)
-            sweepPenalty = normalizedSweep * 0.1
-        }
-        multiplier += sweepPenalty
-
-        // Tilt angle effect: should always be 0 for bilateral symmetry
-        // Any deviation from 0 adds penalty
-        let tiltPenalty = abs(tiltAngle) / 45.0 * 0.15  // Up to 15% penalty
-        multiplier += tiltPenalty
-
-        return max(0.7, min(2.0, multiplier))  // Clamp between 70% and 200%
-    }
-
     /// Calculate maximum safe temperature multiplier (1.0 = baseline 600°C)
     /// Higher is better (can withstand more heat)
     func thermalLimitMultiplier() -> Double {
@@ -114,33 +75,25 @@ struct PlaneDesign: Codable {
     }
 
     /// Generate summary of design tradeoffs
+    /// Note: Drag is now computed from actual geometry via panel methods.
+    /// This summary focuses on thermal properties only.
     func summary() -> String {
-        let drag = dragMultiplier()
         let thermal = thermalLimitMultiplier()
-        let dragPercent = Int((drag - 1.0) * 100)
         let thermalPercent = Int((thermal - 1.0) * 100)
-
-        let dragStr = dragPercent >= 0 ? "+\(dragPercent)%" : "\(dragPercent)%"
         let thermalStr = thermalPercent >= 0 ? "+\(thermalPercent)%" : "\(thermalPercent)%"
 
-        return "Drag: \(dragStr), Thermal Limit: \(thermalStr)"
+        return "Thermal Limit: \(thermalStr)"
     }
 
     /// Score design (0-100, higher is better)
-    /// Balanced scoring considering both drag and thermal properties
+    /// Note: Drag is now computed from actual geometry via panel methods.
+    /// This score is based on thermal properties only.
     func score() -> Int {
-        let drag = dragMultiplier()
         let thermal = thermalLimitMultiplier()
-
-        // Lower drag is better (1.0 = 100 points, 2.0 = 0 points)
-        let dragScore = max(0, 100 - (drag - 0.7) * 100 / 1.3)
 
         // Higher thermal limit is better (1.3 = 100 points, 0.6 = 0 points)
         let thermalScore = (thermal - 0.6) * 100 / 0.7
 
-        // Weighted average: drag is slightly more important
-        let finalScore = dragScore * 0.6 + thermalScore * 0.4
-
-        return Int(finalScore)
+        return Int(thermalScore)
     }
 }

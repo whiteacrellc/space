@@ -13,8 +13,12 @@ class FlightSimulator {
     private var velocity: Double // m/s
     private var fuelMass: Double // kg
     private let dryMass: Double
-    private let dragCalculator: DragCalculator
+    private let dragCalculator: DragCalculator  // Legacy - kept for backward compatibility
     private let planeDesign: PlaneDesign
+
+    // New aerodynamics system
+    private let aeroGeometry: AerodynamicGeometry
+    private let aeroSolver: PanelAerodynamicsSolver
 
     // Simulation parameters
     private let timeStep: Double
@@ -48,6 +52,21 @@ class FlightSimulator {
             baselineDragCoefficient: dragCoefficient,
             planeDesign: planeDesign
         )
+
+        // Initialize new aerodynamics system
+        print("Initializing panel method aerodynamics...")
+        self.aeroGeometry = AerodynamicCache.getGeometry(
+            planform: GameManager.shared.getTopViewPlanform(),
+            profile: GameManager.shared.getSideProfile(),
+            crossSection: GameManager.shared.getCrossSectionPoints()
+        )
+        self.aeroSolver = PanelAerodynamicsSolver(geometry: aeroGeometry)
+
+        print("  - Panels: \(aeroGeometry.panels.count)")
+        print("  - Fineness Ratio: \(String(format: "%.2f", aeroGeometry.finenessRatio))")
+        print("  - Aspect Ratio: \(String(format: "%.2f", aeroGeometry.aspectRatio))")
+        print("  - Wetted Area: \(String(format: "%.1f", aeroGeometry.wettedArea)) m²")
+
         self.timeStep = timeStep
         self.maxSimulationTime = maxSimulationTime
     }
@@ -176,13 +195,24 @@ class FlightSimulator {
             let mass = dryMass + fuelMass
             let centrifugalForce = mass * v * v / radius
             let weightComp = mass * gravityAccel * cosGamma
-            
+
             // We need enough lift to stay on the path.
             // If centrifugal force > weight component, we are effectively orbiting (negative lift needed to stay down, or just float)
             // For drag calculations, we take magnitude of lift, but effectively if we are orbital, lift drag is zero.
             let liftRequired = max(0.0, weightComp - centrifugalForce)
-            
-            let drag = dragCalculator.calculateDrag(altitude: h, velocity: v, lift: liftRequired)
+
+            // NEW: Use panel method aerodynamic solver
+            let aeroForces = aeroSolver.solveTrimCondition(
+                mach: speedMach,
+                altitude: altitudeFeet,
+                velocity: v,
+                requiredLift: liftRequired
+            )
+            let drag = aeroForces.drag
+
+            // Calculate Reynolds number for diagnostics
+            let atm = AtmosphereModel.getAtmosphericConditions(altitudeFeet: altitudeFeet)
+            let Re = atm.density * v * aeroGeometry.aircraftLength / atm.viscosity
             
             // Net acceleration along the flight path
             // F_net = Thrust - Drag - Weight * sin(gamma)
@@ -219,14 +249,22 @@ class FlightSimulator {
 
             // Record trajectory point every 10 steps (1 second) to reduce data
             if Int(time * 10) % 10 == 0 {
-                trajectory.append(TrajectoryPoint(
+                var point = TrajectoryPoint(
                     time: time,
                     altitude: h * PhysicsConstants.metersToFeet,
                     speed: v / PhysicsConstants.speedOfSoundSeaLevel,
                     fuelRemaining: max(0, fuelMass / PhysicsConstants.kgPerLiter),
                     engineMode: propulsionManager.currentMode,
                     temperature: currentTemp
-                ))
+                )
+                // Add aerodynamic diagnostics
+                point.liftCoefficient = aeroForces.CL
+                point.dragCoefficient = aeroForces.CD
+                point.angleOfAttack = aeroForces.angleOfAttack
+                point.reynoldsNumber = Re
+                point.dragBreakdown = aeroForces.breakdown
+
+                trajectory.append(point)
             }
 
             // Check termination conditions

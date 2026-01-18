@@ -28,8 +28,10 @@ struct PlaneDesign: Codable {
     /// Optimal design for best overall performance
     static let optimalDesign = PlaneDesign(tiltAngle: optimalTilt, sweepAngle: optimalSweep, position: optimalPosition)
 
-    /// Calculate drag coefficient multiplier (1.0 = baseline)
-    /// Lower is better (less drag)
+    /// DEPRECATED: Drag is now computed from actual aircraft geometry using panel methods.
+    /// This method is kept for backward compatibility and legacy scoring only.
+    /// For actual drag calculation, see PanelAerodynamicsSolver.
+    @available(*, deprecated, message: "Drag is now computed from panel method aerodynamics. Use PanelAerodynamicsSolver instead.")
     func dragMultiplier() -> Double {
         var multiplier = 0.3
 

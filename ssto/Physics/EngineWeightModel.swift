@@ -188,29 +188,86 @@ struct EngineWeightModel {
 
     // MARK: - Helper Functions
 
-    /// Calculate structural weight based on wetted surface area by region
-    /// Different kg/m² for different parts of the aircraft
+    /// Calculate structural weight using hybrid model:
+    /// - Volume scaling (2/3 power law) for base structure
+    /// - Aerodynamic efficiency bonus/penalty
+    /// - Area-based thermal reinforcement for high-heat regions
     /// - Parameter areaBreakdown: Surface area breakdown by region
+    /// - Parameter volumeM3: Internal volume in cubic meters
     /// - Returns: Structural weight in kg
-    static func calculateStructuralWeight(areaBreakdown: AircraftVolumeModel.SurfaceAreaBreakdown) -> Double {
-        let noseCapWeight = areaBreakdown.noseCap * 30.0        // 30 kg/m² for nose cap
-        let leadingEdgeWeight = areaBreakdown.leadingEdges * 30.0  // 30 kg/m² for leading edges
-        let topSurfaceWeight = areaBreakdown.topSurface * 8.0    // 8 kg/m² for top surface
-        let bottomSurfaceWeight = areaBreakdown.bottomSurface * 12.0  // 12 kg/m² for bottom
-        let engineInletWeight = areaBreakdown.engineInlet * 15.0  // 15 kg/m² for inlet
+    static func calculateStructuralWeight(
+        areaBreakdown: AircraftVolumeModel.SurfaceAreaBreakdown,
+        volumeM3: Double
+    ) -> Double {
 
-        let totalStructuralWeight = noseCapWeight + leadingEdgeWeight + topSurfaceWeight +
-                                    bottomSurfaceWeight + engineInletWeight
+        // 1. Base structural weight from volume (2/3 power law - scaling principle)
+        // Larger aircraft need proportionally more structure, but benefit from size efficiency
+        let baseStructural = pow(volumeM3, 2.0/3.0) * 85.0  // Calibrated constant (kg/m^(2/3))
 
-        print("\n=== Structural Weight Breakdown ===")
-        print("Nose cap:             \(String(format: "%6.0f", noseCapWeight)) kg")
-        print("Leading edges:        \(String(format: "%6.0f", leadingEdgeWeight)) kg")
-        print("Top surface:          \(String(format: "%6.0f", topSurfaceWeight)) kg")
-        print("Bottom surface:       \(String(format: "%6.0f", bottomSurfaceWeight)) kg")
-        print("Engine inlet:         \(String(format: "%6.0f", engineInletWeight)) kg")
-        print("-----------------------------------")
-        print("Total structural:     \(String(format: "%6.0f", totalStructuralWeight)) kg")
-        print("===================================\n")
+        // 2. Calculate aerodynamic efficiency at cruise condition (Mach 6, 80k ft)
+        // This provides a bonus/penalty based on aerodynamic quality
+        let aeroGeometry = AerodynamicCache.getGeometry(
+            planform: GameManager.shared.getTopViewPlanform(),
+            profile: GameManager.shared.getSideProfile(),
+            crossSection: GameManager.shared.getCrossSectionPoints()
+        )
+        let aeroSolver = PanelAerodynamicsSolver(geometry: aeroGeometry)
+
+        // Reference cruise condition: Mach 6 at 80,000 ft
+        let cruiseMach = 6.0
+        let cruiseAltitude = 80000.0  // feet
+        let atm = AtmosphereModel.getAtmosphericConditions(altitudeFeet: cruiseAltitude)
+        let cruiseVelocity = cruiseMach * atm.speedOfSound
+
+        // Assume lift = 0.5 * weight for cruise (aircraft is climbing/accelerating)
+        let estimatedMass = 25000.0  // kg (rough estimate)
+        let requiredLift = estimatedMass * 9.81 * 0.5
+
+        let aeroForces = aeroSolver.solveTrimCondition(
+            mach: cruiseMach,
+            altitude: cruiseAltitude,
+            velocity: cruiseVelocity,
+            requiredLift: requiredLift
+        )
+
+        let liftToDrag = aeroForces.CL / max(0.01, aeroForces.CD)
+
+        // Aerodynamic efficiency multiplier:
+        // L/D = 8 → multiplier = 1.0 (baseline)
+        // L/D > 8 → lighter structure (more efficient design allows weight savings)
+        // L/D < 8 → heavier structure (inefficient design needs reinforcement)
+        let referenceLoverD = 8.0
+        let aeroMultiplier = 1.0 / (1.0 + max(0.0, referenceLoverD - liftToDrag) * 0.05)
+
+        // 3. Thermal reinforcement (area-based, unavoidable for high-temp regions)
+        let noseCapThermal = areaBreakdown.noseCap * 45.0       // 45 kg/m² (high thermal load)
+        let leadingEdgeThermal = areaBreakdown.leadingEdges * 40.0  // 40 kg/m²
+        let topSurfaceThermal = areaBreakdown.topSurface * 8.0   // 8 kg/m² (moderate)
+        let bottomSurfaceThermal = areaBreakdown.bottomSurface * 12.0  // 12 kg/m² (compression)
+        let engineInletThermal = areaBreakdown.engineInlet * 15.0  // 15 kg/m²
+
+        let thermalReinforcement = noseCapThermal + leadingEdgeThermal + topSurfaceThermal +
+                                   bottomSurfaceThermal + engineInletThermal
+
+        // 4. Total structural weight
+        let totalStructuralWeight = baseStructural * aeroMultiplier + thermalReinforcement
+
+        print("\n=== Structural Weight Breakdown (New Model) ===")
+        print("Base structural (volume):  \(String(format: "%6.0f", baseStructural)) kg")
+        print("Aero efficiency (L/D):     \(String(format: "%6.2f", liftToDrag))")
+        print("Aero multiplier:           \(String(format: "%6.3f", aeroMultiplier))")
+        print("After aero bonus:          \(String(format: "%6.0f", baseStructural * aeroMultiplier)) kg")
+        print("")
+        print("Thermal Reinforcement:")
+        print("  Nose cap:                \(String(format: "%6.0f", noseCapThermal)) kg")
+        print("  Leading edges:           \(String(format: "%6.0f", leadingEdgeThermal)) kg")
+        print("  Top surface:             \(String(format: "%6.0f", topSurfaceThermal)) kg")
+        print("  Bottom surface:          \(String(format: "%6.0f", bottomSurfaceThermal)) kg")
+        print("  Engine inlet:            \(String(format: "%6.0f", engineInletThermal)) kg")
+        print("  Subtotal thermal:        \(String(format: "%6.0f", thermalReinforcement)) kg")
+        print("-----------------------------------------------")
+        print("Total structural:          \(String(format: "%6.0f", totalStructuralWeight)) kg")
+        print("===============================================\n")
 
         return totalStructuralWeight
     }
@@ -229,8 +286,11 @@ struct EngineWeightModel {
         planeDesign: PlaneDesign
     ) -> Double {
 
-        // Calculate structural weight from surface area breakdown
-        let structuralWeight = calculateStructuralWeight(areaBreakdown: areaBreakdown)
+        // Calculate structural weight with new hybrid model
+        let structuralWeight = calculateStructuralWeight(
+            areaBreakdown: areaBreakdown,
+            volumeM3: volumeM3
+        )
 
         // Fixed cargo weight
         let cargoWeight = PhysicsConstants.cargoMass

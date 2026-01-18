@@ -99,4 +99,48 @@ class AtmosphereModel {
         let density = p / (Rs * t)
         return density
     }
+
+    /// Calculate dynamic viscosity using Sutherland's formula
+    /// Returns viscosity in Pa·s (kg/(m·s))
+    static func dynamicViscosity(at altitudeMeters: Double) -> Double {
+        let T = temperature(at: altitudeMeters)
+
+        // Sutherland's formula constants for air
+        let mu0: Double = 1.716e-5  // Reference viscosity at T0 (Pa·s)
+        let T0: Double = 273.15     // Reference temperature (K)
+        let S: Double = 110.4       // Sutherland constant for air (K)
+
+        let mu = mu0 * pow(T / T0, 1.5) * (T0 + S) / (T + S)
+        return mu
+    }
+
+    /// Atmospheric conditions bundle
+    struct AtmosphericConditions {
+        let density: Double      // kg/m³
+        let temperature: Double  // K
+        let pressure: Double     // Pa
+        let viscosity: Double    // Pa·s
+        let speedOfSound: Double // m/s
+    }
+
+    /// Get complete atmospheric conditions at altitude (in feet)
+    static func getAtmosphericConditions(altitudeFeet: Double) -> AtmosphericConditions {
+        let altitudeMeters = altitudeFeet * 0.3048
+
+        let density = atmosphericDensity(at: altitudeMeters)
+        let temp = temperature(at: altitudeMeters)
+        let sos = speedOfSound(at: altitudeMeters)
+        let viscosity = dynamicViscosity(at: altitudeMeters)
+
+        // Calculate pressure from density and temperature
+        let pressure = density * Rs * temp
+
+        return AtmosphericConditions(
+            density: density,
+            temperature: temp,
+            pressure: pressure,
+            viscosity: viscosity,
+            speedOfSound: sos
+        )
+    }
 }

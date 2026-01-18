@@ -15,6 +15,13 @@ struct TrajectoryPoint {
     let fuelRemaining: Double // liters
     let engineMode: EngineMode
     let temperature: Double // leading edge temperature in Celsius
+
+    // Aerodynamic diagnostics (optional, may be nil for old data)
+    var liftCoefficient: Double? = nil
+    var dragCoefficient: Double? = nil
+    var angleOfAttack: Double? = nil  // degrees
+    var reynoldsNumber: Double? = nil
+    var dragBreakdown: DragBreakdown? = nil
 }
 
 /// Result of simulating one flight segment (between two waypoints)
@@ -51,7 +58,7 @@ struct MissionResult {
         for segment in segments {
             for point in segment.trajectory {
                 // Adjust time to be cumulative across segments
-                let adjusted = TrajectoryPoint(
+                var adjusted = TrajectoryPoint(
                     time: point.time + timeOffset,
                     altitude: point.altitude,
                     speed: point.speed,
@@ -59,6 +66,13 @@ struct MissionResult {
                     engineMode: point.engineMode,
                     temperature: point.temperature
                 )
+                // Copy aerodynamic diagnostics if present
+                adjusted.liftCoefficient = point.liftCoefficient
+                adjusted.dragCoefficient = point.dragCoefficient
+                adjusted.angleOfAttack = point.angleOfAttack
+                adjusted.reynoldsNumber = point.reynoldsNumber
+                adjusted.dragBreakdown = point.dragBreakdown
+
                 allPoints.append(adjusted)
             }
             timeOffset += segment.duration
